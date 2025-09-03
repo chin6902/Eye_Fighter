@@ -1,0 +1,151 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &1955912452652581832
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 557284198996577516}
+  - component: {fileID: 5786171599819269110}
+  - component: {fileID: 9032114459948488927}
+  - component: {fileID: 1908607369503475077}
+  - component: {fileID: 7760417493769865169}
+  - component: {fileID: 4334296228207169322}
+  - component: {fileID: 1798586305601785263}
+  m_Layer: 0
+  m_Name: GameManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &557284198996577516
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1955912452652581832}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &5786171599819269110
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1955912452652581832}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0cdbb1e521c3aab4da9c2bbfc11eb3a4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &9032114459948488927
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1955912452652581832}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9996e146c39214746b65d18c128b2679, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &1908607369503475077
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1955912452652581832}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7cb00872860a409459db14f693541832, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  elementDatabase: {fileID: 11400000, guid: abfc0e721c2cfdc4a88fae486cfdb021, type: 2}
+  MyCharacterController: {fileID: 0}
+  enemyFinder: {fileID: 0}
+  GazeDotCanvas: {fileID: 0}
+  Phase1: {fileID: 0}
+  Phase2: {fileID: 0}
+  autoExitCheckDelay: 3
+  SkillCooldown: 3
+  _skillTimer: 0
+  ParryCooldown: 5
+  UnlimitedDuration: 5
+  _unlimitedTimer: 0
+  isPaused: 0
+  DefensiveGaugeMax: 100
+  _defensiveGauge: 100
+  DefensiveRecoverPerSecond: 2
+  DefensiveConsumePerSecond: 5
+  DefensiveSlowAmount: 0.5
+  currentGamePhase: 0
+--- !u!114 &7760417493769865169
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1955912452652581832}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4a7cced83a6a55e4a8036ffb4c2953c6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  playerHealth: {fileID: 0}
+  enemies: []
+  pauseMenuPanel: {fileID: 0}
+  resumeButton: {fileID: 0}
+  retryButton1: {fileID: 0}
+  endGamePanel: {fileID: 0}
+  endGameTitleText: {fileID: 0}
+  averageAccuracyText: {fileID: 0}
+  retryButton2: {fileID: 0}
+  homeButton: {fileID: 0}
+  chaseInterval: 10
+--- !u!114 &4334296228207169322
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1955912452652581832}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f9c0d8b83f60f2642888ab2acc86af7d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  maxChargesPerElement: 3
+--- !u!114 &1798586305601785263
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1955912452652581832}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6e9b54e4e5ea5cf43be2d72717af2432, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  DefaultSlotCooldown: 4
+  DefaultMaxAttackers: 1
+  configs:
+  - type: 0
+    maxAttackers: 1
+    slotCooldown: 4
+  - type: 1
+    maxAttackers: 2
+    slotCooldown: 5

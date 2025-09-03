@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9680a4743e6780448978427c8ede67a5, type: 3}
+  m_Name: Water
+  m_EditorClassIdentifier: 
+  elementType: 3
+  icon: {fileID: 21300000, guid: 0976193597c443644b7125b8e8a1711d, type: 3}
+  popupColor: {r: 0, g: 1, b: 0.9975107, a: 1}
+  hitEffect: {fileID: 5075217713574735849, guid: 8dc9ecb484fe93f4b808e6e735b01dc6, type: 3}
+  deadEffect: {fileID: 3209465622458077682, guid: 4c619125aad70be45b395472180eaf6c, type: 3}
+  HitSFX: {fileID: 8300000, guid: a43c5c553e0910f479ef7172c2054901, type: 3}
