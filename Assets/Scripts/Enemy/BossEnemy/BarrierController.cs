@@ -6,9 +6,9 @@ using UnityEngine;
 /// <summary>
 /// Barrier controller v2
 /// - explicit ActivateBarrier() / DeactivateBarrier()
-/// - optional auto-recover (count or infinite)
-/// - auto-assigns magic circle instances to spots (index or child lookup)
+/// - auto-assigns magic circle instances to spots (child lookup)
 /// - raises events so other systems (e.g. BossController) can react
+/// - recovery is explicit: call RecoverBarrierImmediate() or RecoverBarrierDelayed(delay)
 /// </summary>
 public class BarrierController : MonoBehaviour
 {
@@ -19,20 +19,9 @@ public class BarrierController : MonoBehaviour
     [Header("Spots (assign manually or auto-fill)")]
     public List<BarrierSpot> Spots = new List<BarrierSpot>();
 
-    [Header("Magic circle instances (scene objects)")]
-    public List<GameObject> MagicCircleInstances = new List<GameObject>();
-
     [Header("Tag")]
     [Tooltip("Tag boss will have while protected. Must exist in Project Tags.")]
     public string ProtectedTag = "EnemyProtected";
-
-    [Header("Recovery (optional)")]
-    [Tooltip("If true, barrier will attempt to recover automatically after being destroyed")]
-    public bool AutoRecover = false;
-    [Tooltip("How many times barrier will recover. Set to <=0 for infinite recoveries when AutoRecover is true.")]
-    public int RecoverCount = 0;
-    [Tooltip("Delay (seconds) before barrier recovers after full break.")]
-    public float RecoverDelay = 10f;
 
     [Header("Start")]
     public bool StartActive = true;
@@ -40,7 +29,6 @@ public class BarrierController : MonoBehaviour
     // runtime
     private string _originalBossTag;
     private int _remainingSpots => CountActiveSpots();
-    private int _remainingRecoveries; // internal counter for finite recover
     private Coroutine _recoverCoroutine;
 
     // events
@@ -53,7 +41,7 @@ public class BarrierController : MonoBehaviour
         // auto-fill Spots if children have BarrierSpot
         if (Spots.Count == 0)
         {
-            var found = GetComponentsInChildren<BarrierSpot>();
+            var found = GetComponentsInChildren<BarrierSpot>(true);
             foreach (var f in found) Spots.Add(f);
         }
     }
@@ -69,16 +57,18 @@ public class BarrierController : MonoBehaviour
             if (Spots[i] != null) Spots[i].SetController(this);
         }
 
+        // auto-assign magic circle instances by child lookup (no inspector list required)
         AutoAssignMagicCircles();
-
-        _remainingRecoveries = RecoverCount;
 
         if (StartActive) ActivateBarrier();
         else DeactivateBarrierImmediate();
     }
 
     /// <summary>
-    /// Auto assign magic circle instances -> spots using same strategy as before.
+    /// Auto assign magic circle instances -> spots using simple child-lookup:
+    /// 1) find a ParticleSystem in the spot's children
+    /// 2) or find a child named "MagicCircle"
+    /// This keeps the inspector simpler (no MagicCircleInstances list).
     /// </summary>
     [ContextMenu("Auto Assign Magic Circles")]
     public void AutoAssignMagicCircles()
@@ -88,22 +78,10 @@ public class BarrierController : MonoBehaviour
             var spot = Spots[i];
             if (spot == null) continue;
 
+            // don't override if already assigned
             if (spot.MagicCircleInstance != null) continue;
 
-            if (i < MagicCircleInstances.Count && MagicCircleInstances[i] != null)
-            {
-                var candidate = MagicCircleInstances[i];
-                if (candidate.scene.IsValid())
-                {
-                    spot.MagicCircleInstance = candidate;
-                    continue;
-                }
-                else
-                {
-                    Debug.LogWarning($"BarrierController_v2: MagicCircleInstances[{i}] looks like a prefab asset. Use a scene instance.", this);
-                }
-            }
-
+            // 1) search for ParticleSystem in children
             var ps = spot.GetComponentInChildren<ParticleSystem>(true);
             if (ps != null)
             {
@@ -111,8 +89,15 @@ public class BarrierController : MonoBehaviour
                 continue;
             }
 
+            // 2) fallback: look for a child named "MagicCircle"
             var child = spot.transform.Find("MagicCircle");
-            if (child != null) spot.MagicCircleInstance = child.gameObject;
+            if (child != null)
+            {
+                spot.MagicCircleInstance = child.gameObject;
+                continue;
+            }
+
+            // If neither found, leave MagicCircleInstance null — that's valid.
         }
     }
 
@@ -122,7 +107,7 @@ public class BarrierController : MonoBehaviour
     /// </summary>
     public void ActivateBarrier()
     {
-        // cancel pending recovery
+        // cancel pending recovery if any
         if (_recoverCoroutine != null)
         {
             StopCoroutine(_recoverCoroutine);
@@ -186,9 +171,9 @@ public class BarrierController : MonoBehaviour
         foreach (var s in Spots) if (s != null) s.gameObject.SetActive(false);
     }
 
-
     /// <summary>
     /// Called by BarrierSpot when a spot is broken.
+    /// Automatic recovery has been removed — call RecoverBarrierImmediate or RecoverBarrierDelayed manually.
     /// </summary>
     internal void NotifySpotBroken(BarrierSpot spot)
     {
@@ -196,29 +181,44 @@ public class BarrierController : MonoBehaviour
         {
             // barrier fully broken
             OnBarrierFullyBroken?.Invoke();
+
+            // Deactivate barrier right away (keep same behaviour)
             DeactivateBarrier();
 
-            // start recovery if enabled
-            if (AutoRecover)
-            {
-                if (RecoverCount <= 0)
-                {
-                    // infinite
-                    _recoverCoroutine = StartCoroutine(RecoverAfterDelay());
-                }
-                else if (_remainingRecoveries > 0)
-                {
-                    _remainingRecoveries--;
-                    _recoverCoroutine = StartCoroutine(RecoverAfterDelay());
-                }
-            }
+            // NOTE: automatic recovery removed. Call RecoverBarrierImmediate() or RecoverBarrierDelayed(...) from your BossController when you want a recovery.
         }
     }
 
-    private IEnumerator RecoverAfterDelay()
+    /// <summary>
+    /// Public API: recover the barrier immediately (activate now).
+    /// Call this from your BossController when you want the barrier back.
+    /// </summary>
+    public void RecoverBarrierImmediate()
+    {
+        ActivateBarrier();
+    }
+
+    /// <summary>
+    /// Public API: recover the barrier after a delay.
+    /// This starts a coroutine on this controller. Call this only when this GameObject/Behaviour
+    /// is active (or use a global runner). Returns the started coroutine.
+    /// </summary>
+    public Coroutine RecoverBarrierDelayed(float delay)
+    {
+        if (_recoverCoroutine != null)
+        {
+            StopCoroutine(_recoverCoroutine);
+            _recoverCoroutine = null;
+        }
+
+        _recoverCoroutine = StartCoroutine(RecoverAfterDelayInternal(delay));
+        return _recoverCoroutine;
+    }
+
+    private IEnumerator RecoverAfterDelayInternal(float delay)
     {
         float timer = 0f;
-        while (timer < RecoverDelay)
+        while (timer < delay)
         {
             timer += Time.deltaTime;
             yield return null;

@@ -8,6 +8,8 @@ public class ElementData : ScriptableObject
     public Color popupColor;
     public GameObject hitEffect;
     public GameObject deadEffect;
+    public GameObject chargedHitEffect;
+    public GameObject barrierBreakEffect;
 
     public AudioClip HitSFX;
 }

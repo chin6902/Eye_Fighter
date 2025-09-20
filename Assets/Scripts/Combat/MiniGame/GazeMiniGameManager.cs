@@ -70,7 +70,6 @@ public class GazeMiniGameManager : MonoBehaviour
         {
             GameManager.Instance.enemyFinder.RefreshEnemies();
             GameManager.Instance.CycleGazeTarget();
-            TryGenerateCurve();
         }
     }
 
@@ -112,7 +111,7 @@ public class GazeMiniGameManager : MonoBehaviour
                 float len = (patternLength > 0f) ? patternLength : pathGenerator.defaultPatternLength;
                 pathGenerator.GeneratePatternAtSpot(spot.transform, canvas, cam, spot.SpotPattern, len, patternSegments);
 
-                Debug.Log($"GazeMiniGameManager: Generated PATTERN for '{spot.name}' -> lastGeneratedWasPattern={pathGenerator.lastGeneratedWasPattern}, groups={pathGenerator.segmentGroups?.Count ?? 0}, segments(flat)={pathGenerator.segments?.Count ?? 0}, startPoints={pathGenerator.startPointRects?.Count ?? 0}");
+                //Debug.Log($"GazeMiniGameManager: Generated PATTERN for '{spot.name}' -> lastGeneratedWasPattern={pathGenerator.lastGeneratedWasPattern}, groups={pathGenerator.segmentGroups?.Count ?? 0}, segments(flat)={pathGenerator.segments?.Count ?? 0}, startPoints={pathGenerator.startPointRects?.Count ?? 0}");
             }
             else
             {

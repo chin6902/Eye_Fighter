@@ -17,4 +17,6 @@ MonoBehaviour:
   popupColor: {r: 0, g: 1, b: 0.9975107, a: 1}
   hitEffect: {fileID: 5075217713574735849, guid: 8dc9ecb484fe93f4b808e6e735b01dc6, type: 3}
   deadEffect: {fileID: 3209465622458077682, guid: 4c619125aad70be45b395472180eaf6c, type: 3}
+  chargedHitEffect: {fileID: 5896130575217019483, guid: 48079e81d8b316b4a94cfa8336a45c50, type: 3}
+  barrierBreakEffect: {fileID: 7028740968192815488, guid: 4186c60f05e36104b832edb21c7700c3, type: 3}
   HitSFX: {fileID: 8300000, guid: a43c5c553e0910f479ef7172c2054901, type: 3}

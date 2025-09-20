@@ -97,7 +97,7 @@ public class EnemyManager : MonoBehaviour
                 }
             }
 
-            // Clean waiting queue by re-queuing only valid entries
+            // Clean waiting queue by removing null or dead entries but keep others in order
             var q = _waitingQueuesByType[type];
             if (q.Count > 0)
             {
@@ -105,15 +105,13 @@ public class EnemyManager : MonoBehaviour
                 while (q.Count > 0)
                 {
                     var e = q.Dequeue();
-                    if (e == null || e.IsDead) continue;
-                    // If out of chase range, skip re-adding (mimics your old filter)
-                    float dist = Vector3.Distance(e.transform.position, e.Player.position);
-                    if (dist <= e.ChaseRange)
-                        tmp.Enqueue(e);
+                    if (e == null || e.IsDead) continue; // remove invalid
+                    tmp.Enqueue(e); // keep all others — even if currently out of range
                 }
                 _waitingQueuesByType[type] = tmp;
                 q = _waitingQueuesByType[type];
             }
+
 
             // Try to grant slots while there are waiting enemies and slots available and cooldown ready
             int maxForType = _maxAttackersByType[type];
@@ -127,15 +125,33 @@ public class EnemyManager : MonoBehaviour
                 if (Time.time - lastGrant < cooldownForType)
                     break;
 
-                var next = queueForType.Dequeue();
-                if (next == null || next.IsDead) continue;
+                var next = queueForType.Peek(); // do not dequeue yet
+                if (next == null || next.IsDead)
+                {
+                    queueForType.Dequeue(); // remove and continue
+                    continue;
+                }
 
+                // Only grant if the enemy is currently eligible (in-range)
+                float dist = Vector3.Distance(next.transform.position, next.Player.position);
+                if (dist > next.ChaseRange)
+                {
+                    // enemy temporarily out of range — move it to end of queue to be retried later (keeps fairness)
+                    queueForType.Dequeue();
+                    queueForType.Enqueue(next);
+                    // avoid spinning: break to allow other types/next frame to progress, or consume one slot of time
+                    break;
+                }
+
+                // It's eligible — grant
+                queueForType.Dequeue();
                 _activeAttackersByType[type].Add(next);
                 _lastGrantTimeByType[type] = Time.time;
                 lastGrant = Time.time;
 
                 next.OnAttackGranted();
             }
+
         }
     }
 

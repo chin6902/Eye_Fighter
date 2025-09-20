@@ -25,6 +25,14 @@ public class GameManager : MonoBehaviour
     [SerializeField] private GameObject Phase1;
     [SerializeField] private GameObject Phase2;
 
+    [Header("Phase Durations")]
+    [Tooltip("Seconds for Element Select Phase")]
+    public float ElementSelectDuration = 10f;
+
+    [Tooltip("Seconds for Gaze Trace Phase")]
+    public float GazeTraceDuration = 13f;
+
+
     [Header("Auto Exit Settings")]
     public float autoExitCheckDelay = 3f;
 
@@ -181,8 +189,10 @@ public class GameManager : MonoBehaviour
         if (currentGamePhase == MiniGamePhase.ElementSelectPhase || currentGamePhase == MiniGamePhase.GazeTracePhase)
         {
             time -= Time.unscaledDeltaTime;
-            float max = 10f;
+
+            float max = (currentGamePhase == MiniGamePhase.ElementSelectPhase) ? ElementSelectDuration : GazeTraceDuration;
             onPhaseTimerChanged?.Invoke(time, max, currentGamePhase);
+
             if (time <= 0f)
             {
                 Debug.Log($"{currentGamePhase} timed out.");
@@ -229,7 +239,7 @@ public class GameManager : MonoBehaviour
 
         currentGamePhase = MiniGamePhase.ElementSelectPhase;
         GazeMode = true;
-        time = 10f;
+        time = ElementSelectDuration;
 
         enemyFinder.RefreshEnemies();
 
@@ -253,7 +263,6 @@ public class GameManager : MonoBehaviour
 
     /// <summary>
     /// Confirms the selected element & starts the Gaze Trace Phase.
-    /// Called when player overlaps & presses E.
     /// </summary>
     public void ConfirmElementSelection()
     {
@@ -267,7 +276,7 @@ public class GameManager : MonoBehaviour
         }
 
         currentGamePhase = MiniGamePhase.GazeTracePhase;
-        time = 10f;
+        time = GazeTraceDuration;
 
         ApplySlowMotion(true, 0.65f);
         SetGazeCanvas(true, MiniGamePhase.GazeTracePhase);

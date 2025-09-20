@@ -390,6 +390,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ParryRadius: 3
   parryEffectPrefab: {fileID: 67375830083872037, guid: e7c7918063dca854d98a0fa2aeefaba0, type: 3}
+  ParryInvincibilityDuration: 1.5
 --- !u!1 &7086741456653194825
 GameObject:
   m_ObjectHideFlags: 0
@@ -469,6 +470,7 @@ MonoBehaviour:
   PlayerTransform: {fileID: 56504933588764616}
   DetectionAngle: 150
   DetectionDistance: 25
+  pathGenerator: {fileID: 0}
 --- !u!1 &7732349323453829963
 GameObject:
   m_ObjectHideFlags: 0

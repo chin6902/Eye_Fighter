@@ -51,11 +51,11 @@ MonoBehaviour:
   useSeparateCounts: 1
   minMembers: 1
   maxMembers: 2
-  mushroomMin: 0
-  mushroomMax: 0
-  cactusMin: 0
-  cactusMax: 1
-  checkRadius: 0.5
+  mushroomMin: 1
+  mushroomMax: 3
+  cactusMin: 1
+  cactusMax: 3
+  checkRadius: 1
   obstacleMask:
     serializedVersion: 2
     m_Bits: 128

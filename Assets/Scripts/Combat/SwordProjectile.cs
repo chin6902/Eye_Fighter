@@ -6,7 +6,12 @@ public class SwordProjectile : MonoBehaviour
 {
     private Action onImpact;
     private bool hasHit = false;
+
+    // cached target comps (may be null)
     private Health targetHealth;
+    private BossHealth targetBossHealth;
+    private BarrierSpot targetBarrierSpot;
+
     private GameManager.ElementType attackerElement;
     private float accuracy;
 
@@ -18,10 +23,12 @@ public class SwordProjectile : MonoBehaviour
     private float travelTime;
     private float timer;
 
-
     public float targetHeightOffset = 0.5f;
     public float impactDistance = 0.5f;
 
+    /// <summary>
+    /// Initialize projectile. (unchanged signature from your current usage)
+    /// </summary>
     public void Initialize(
         Transform target,
         GameManager.ElementType attackerElement,
@@ -33,7 +40,6 @@ public class SwordProjectile : MonoBehaviour
         Action impactCallback)
     {
         this.target = target;
-        this.targetHealth = target.GetComponent<Health>();
         this.attackerElement = attackerElement;
         this.accuracy = accuracy;
         this.start = start;
@@ -42,11 +48,25 @@ public class SwordProjectile : MonoBehaviour
         this.travelTime = travelTime;
         this.onImpact = impactCallback;
 
-        transform.position = start;
+        // cache possible components on the target
+        if (target != null)
+        {
+            targetHealth = target.GetComponent<Health>();
+            targetBossHealth = target.GetComponent<BossHealth>();
+            targetBarrierSpot = target.GetComponent<BarrierSpot>();
+        }
+        else
+        {
+            targetHealth = null;
+            targetBossHealth = null;
+            targetBarrierSpot = null;
+        }
 
+        transform.position = start;
         timer = 0f;
 
-        GetComponent<Rigidbody>().isKinematic = true;
+        var rb = GetComponent<Rigidbody>();
+        if (rb != null) rb.isKinematic = true;
     }
 
     private void Update()
@@ -85,21 +105,41 @@ public class SwordProjectile : MonoBehaviour
         }
     }
 
-
     private void OnHit()
     {
         if (hasHit) return;
-
         hasHit = true;
-        if (targetHealth != null)
+
+        if (targetBossHealth != null)
         {
+            // BossHealth will consume the charge internally and apply charged effects.
+            targetBossHealth.ReceiveElementalDamage(attackerElement, accuracy);
+
+            var dataB = ElementDatabase.Instance.Get(attackerElement);
+            if (dataB != null && dataB.HitSFX != null)
+                SoundManager.PlaySFX(dataB.HitSFX, 0.4f);
+        }
+        else if (targetHealth != null)
+        {
+            // normal enemy
             targetHealth.ReceiveElementalDamage(attackerElement, accuracy);
 
-            var data = ElementDatabase.Instance.Get(attackerElement);
-            if (data != null && data.HitSFX != null)
-            {
-                SoundManager.PlaySFX(data.HitSFX, 0.5f);
-            }
+            var dataH = ElementDatabase.Instance.Get(attackerElement);
+            if (dataH != null && dataH.HitSFX != null)
+                SoundManager.PlaySFX(dataH.HitSFX, 0.5f);
+        }
+        else if (targetBarrierSpot != null)
+        {
+            // barrier spot (existing behavior)
+            targetBarrierSpot.ReceiveElementalDamage(attackerElement, accuracy);
+
+            var dataS = ElementDatabase.Instance.Get(attackerElement);
+            if (dataS != null && dataS.HitSFX != null)
+                SoundManager.PlaySFX(dataS.HitSFX, 0.5f);
+        }
+        else
+        {
+            // nothing to hit
         }
 
         onImpact?.Invoke();

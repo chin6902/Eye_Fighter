@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -12,6 +13,9 @@ public class Health : MonoBehaviour
     [Header("Element Settings (enemies only)")]
     [Tooltip("Which element this enemy has (ignored on player)")]
     [SerializeField] private GameManager.ElementType elementType = GameManager.ElementType.None;
+
+    //for player invincibility frames
+    private Coroutine _invincibilityRoutine;
 
     private static readonly GameManager.ElementType[] enemyElements = new[] {
         GameManager.ElementType.Fire,
@@ -229,6 +233,27 @@ public class Health : MonoBehaviour
 
             Destroy(gameObject, 1.5f);
         }
+    }
+
+    public void SetInvincibleFor(float seconds)
+    {
+        if (_invincibilityRoutine != null)
+        {
+            StopCoroutine(_invincibilityRoutine);
+            _invincibilityRoutine = null;
+        }
+
+        _invincibilityRoutine = StartCoroutine(InvincibilityCoroutine(seconds));
+    }
+
+    private IEnumerator InvincibilityCoroutine(float seconds)
+    {
+        invincible = true;
+        // OPTIONAL: visual/audio feedback here (e.g. start flash, play sound)
+        yield return new WaitForSeconds(Mathf.Max(0f, seconds));
+        invincible = false;
+        // OPTIONAL: stop flash
+        _invincibilityRoutine = null;
     }
 
     private bool IsEffective(GameManager.ElementType attacker, GameManager.ElementType defender)
