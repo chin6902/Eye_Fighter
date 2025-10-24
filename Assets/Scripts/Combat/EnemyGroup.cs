@@ -161,7 +161,6 @@ public class EnemyGroup : MonoBehaviour
             yield break;
         }
 
-        // Build the onSpawned callback which the spawner must call when it actually instantiates the GameObject.
         Action<GameObject> onSpawned = (go) =>
         {
             if (go == null) return;
@@ -175,8 +174,27 @@ public class EnemyGroup : MonoBehaviour
                 var h = go.GetComponent<Health>();
                 if (h != null)
                 {
-                    // subscribe: when the member dies, remove it from the group's list
-                    h.OnDie += () => { StartCoroutine(RemoveMemberDelayed(ctrl)); };
+                    // local function so we can safely check `this` when the event fires
+                    void OnMemberDie()
+                    {
+                        // UnityEngine.Object overloaded operator: this == null is true if the group has been destroyed
+                        if (this == null) return;
+
+                        // double-guard: if gameObject is missing, don't call StartCoroutine
+                        if (gameObject == null) return;
+
+                        // defensive try/catch: if somehow destroyed between the checks, ignore exception
+                        try
+                        {
+                            StartCoroutine(RemoveMemberDelayed(ctrl));
+                        }
+                        catch (MissingReferenceException)
+                        {
+                            // group destroyed; nothing to do
+                        }
+                    }
+
+                    h.OnDie += OnMemberDie;
                 }
             }
             else
@@ -185,6 +203,7 @@ public class EnemyGroup : MonoBehaviour
                 try { Destroy(go); } catch { }
             }
         };
+
 
         // Attempt to call the spawner's EnqueueSpawn method.
         try

@@ -5,6 +5,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 
 public class GameFlowManager : MonoBehaviour
 {
@@ -12,7 +13,6 @@ public class GameFlowManager : MonoBehaviour
 
     [Header("References")]
     [SerializeField] private Health playerHealth;
-    [SerializeField] private List<EnemyController> enemies; // optional inspector list (not required)
 
     [Header("Pause Menu UI")]
     [SerializeField] private GameObject pauseMenuPanel;
@@ -23,6 +23,7 @@ public class GameFlowManager : MonoBehaviour
     [SerializeField] private GameObject endGamePanel;
     [SerializeField] private TextMeshProUGUI endGameTitleText;
     [SerializeField] private TextMeshProUGUI averageAccuracyText;
+    [SerializeField] private TextMeshProUGUI projectilesClearedText;
     [SerializeField] private Button retryButton2;
     [SerializeField] private Button homeButton;
 
@@ -34,9 +35,13 @@ public class GameFlowManager : MonoBehaviour
     public UnityEvent<GameObject> OnBossStarted;  // passes spawned boss GameObject (may be null if spawner handled spawn)
     public UnityEvent OnBossDefeated;
 
+    // runtime state
     private bool isPaused = false;
     private bool gameEnded = false;
     private List<float> allAccuracies = new List<float>();
+
+    // projectile cleared counter
+    private int projectilesCleared = 0;
 
     // tracked bosses (we subscribe to their OnDie)
     private readonly HashSet<BossHealth> trackedBosses = new HashSet<BossHealth>();
@@ -46,39 +51,89 @@ public class GameFlowManager : MonoBehaviour
     // whether the boss-phase has started (boss spawn time reached)
     private bool bossPhaseStarted = false;
 
+    // Only declare "boss-phase active" after we've actually seen at least one boss.
+    // This prevents declaring clear if bossPhaseStarted was true but no bosses exist.
+    private bool bossPhaseConfirmed = false;
+
+    // cached handler so we can remove it later
+    private Action<float> attackHandler;
+
     private void Awake()
     {
         if (Instance == null) Instance = this;
-        else Destroy(gameObject);
+
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+        SceneManager.sceneLoaded += OnSceneLoaded;
     }
 
     private void Start()
     {
+        // Reset runtime data and subscriptions to behave like a fresh run.
+        ResetRuntimeState();
+
         // UI init
         if (pauseMenuPanel != null) pauseMenuPanel.SetActive(false);
         if (endGamePanel != null) endGamePanel.SetActive(false);
 
-        if (resumeButton != null) resumeButton.onClick.AddListener(ResumeGame);
-        if (retryButton1 != null) retryButton1.onClick.AddListener(RetryGame);
-        if (retryButton2 != null) retryButton2.onClick.AddListener(RetryGame);
-        if (homeButton != null) homeButton.onClick.AddListener(ReturnHome);
+        // Defensive: remove previous listeners then add.
+        if (resumeButton != null)
+        {
+            resumeButton.onClick.RemoveAllListeners();
+            resumeButton.onClick.AddListener(ResumeGame);
+        }
+
+        if (retryButton1 != null)
+        {
+            retryButton1.onClick.RemoveAllListeners();
+            retryButton1.onClick.AddListener(RetryGame);
+        }
+
+        if (retryButton2 != null)
+        {
+            retryButton2.onClick.RemoveAllListeners();
+            retryButton2.onClick.AddListener(RetryGame);
+        }
+
+        if (homeButton != null)
+        {
+            homeButton.onClick.RemoveAllListeners();
+            homeButton.onClick.AddListener(ReturnHome);
+        }
 
         if (GameManager.Instance != null)
-            GameManager.Instance.onAttack += (acc) => allAccuracies.Add(acc);
+        {
+            if (attackHandler != null)
+                GameManager.Instance.onAttack -= attackHandler;
 
-        // register any bosses that already exist in the scene (e.g. placed in authoring)
+            attackHandler = (acc) => allAccuracies.Add(acc);
+            GameManager.Instance.onAttack += attackHandler;
+        }
+
         RegisterAllExistingBosses();
 
-        // subscribe to spawner event if spawner assigned
         if (spawner != null)
         {
+            try { spawner.OnBossSpawned -= HandleSpawnerBossSpawned; } catch { }
             spawner.OnBossSpawned += HandleSpawnerBossSpawned;
         }
+
+        // Subscribe to defensive mini-game projectile cleared event
+        try
+        {
+            DefensiveMiniGame.OnProjectileCleared -= HandleProjectileCleared;
+        }
+        catch { }
+        DefensiveMiniGame.OnProjectileCleared += HandleProjectileCleared;
+
+        // ensure projectile text hidden initially
+        if (projectilesClearedText != null)
+            projectilesClearedText.gameObject.SetActive(false);
     }
 
     private void OnDestroy()
     {
-        // unsubscribe boss death handlers
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+
         foreach (var kv in new List<KeyValuePair<BossHealth, Action>>(bossDeathHandlers))
         {
             var boss = kv.Key;
@@ -93,9 +148,105 @@ public class GameFlowManager : MonoBehaviour
         trackedBosses.Clear();
 
         if (spawner != null)
-            spawner.OnBossSpawned -= HandleSpawnerBossSpawned;
+        {
+            try { spawner.OnBossSpawned -= HandleSpawnerBossSpawned; } catch { }
+        }
+
+        if (GameManager.Instance != null && attackHandler != null)
+        {
+            try { GameManager.Instance.onAttack -= attackHandler; } catch { }
+            attackHandler = null;
+        }
+
+        // Unsubscribe defensive mini-game event
+        try
+        {
+            DefensiveMiniGame.OnProjectileCleared -= HandleProjectileCleared;
+        }
+        catch { }
 
         if (Instance == this) Instance = null;
+    }
+
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        // Reset runtime state when a new scene is loaded (covers Retry from pause menu).
+        ResetRuntimeState();
+
+        // re-register bosses in the new scene
+        RegisterAllExistingBosses();
+
+        // re-hook spawner if inspector reference is still valid
+        if (spawner != null)
+        {
+            try { spawner.OnBossSpawned -= HandleSpawnerBossSpawned; } catch { }
+            spawner.OnBossSpawned += HandleSpawnerBossSpawned;
+        }
+
+        // re-hook attack handler
+        if (GameManager.Instance != null)
+        {
+            if (attackHandler == null)
+                attackHandler = (acc) => allAccuracies.Add(acc);
+
+            try { GameManager.Instance.onAttack -= attackHandler; } catch { }
+            GameManager.Instance.onAttack += attackHandler;
+        }
+
+        // re-subscribe defensive mini-game event (defensive)
+        try
+        {
+            DefensiveMiniGame.OnProjectileCleared -= HandleProjectileCleared;
+        }
+        catch { }
+        DefensiveMiniGame.OnProjectileCleared += HandleProjectileCleared;
+
+        // ensure UI panels are hidden at scene start
+        if (pauseMenuPanel != null) pauseMenuPanel.SetActive(false);
+        if (endGamePanel != null) endGamePanel.SetActive(false);
+
+        // ensure projectile text hidden at scene start
+        if (projectilesClearedText != null)
+            projectilesClearedText.gameObject.SetActive(false);
+    }
+
+    /// <summary>
+    /// Reset runtime-only state and unsubscribe any previously registered handlers.
+    /// Call this on initial start and on scene reloads (retry).
+    /// </summary>
+    private void ResetRuntimeState()
+    {
+        // clear paused / ended flags
+        isPaused = false;
+        gameEnded = false;
+
+        // ensure time scale is normal (important if Pause set timeScale = 0)
+        Time.timeScale = 1f;
+        Time.fixedDeltaTime = 0.02f;
+
+        // clear accuracies from previous run
+        allAccuracies.Clear();
+
+        // reset projectile counter
+        projectilesCleared = 0;
+
+        // unsubscribe any boss death handlers previously registered
+        foreach (var kv in new List<KeyValuePair<BossHealth, Action>>(bossDeathHandlers))
+        {
+            var boss = kv.Key;
+            var handler = kv.Value;
+            if (boss != null && handler != null)
+            {
+                try { boss.OnDie -= handler; } catch { }
+            }
+        }
+
+        bossDeathHandlers.Clear();
+        trackedBosses.Clear();
+
+        // reset boss-phase flags (must confirm later by actually finding/seeing bosses)
+        bossPhaseStarted = false;
+        bossPhaseConfirmed = false;
     }
 
     private void Update()
@@ -119,8 +270,8 @@ public class GameFlowManager : MonoBehaviour
             }
 
             // 2) Game Clear?
-            // Only declare game clear after boss phase started and all tracked bosses are gone.
-            if (bossPhaseStarted)
+            // Only declare game clear after boss phase started AND we've confirmed the boss phase by seeing at least one boss.
+            if (bossPhaseStarted && bossPhaseConfirmed)
             {
                 if (trackedBosses.Count == 0)
                 {
@@ -132,22 +283,19 @@ public class GameFlowManager : MonoBehaviour
             }
             else
             {
-                // Boss-phase not started yet:
+                // Boss-phase not started/confirmed yet:
                 // Do NOT call Game Clear when normal enemies are temporarily 0 (spawner may respawn).
-                // If you need a level type with no boss, add a design-time flag to allow early-clear.
             }
         }
     }
 
     // ---------------- Boss tracking ----------------
 
-    /// <summary>
-    /// Called by EnemySpawner when it spawns the boss (spawner invokes OnBossSpawned).
-    /// </summary>
     private void HandleSpawnerBossSpawned(GameObject bossGO)
     {
-        // mark that boss-phase started
+        // mark that boss-phase started and confirmed (spawner actually spawned a boss)
         bossPhaseStarted = true;
+        bossPhaseConfirmed = true;
 
         // notify external listeners (HUD/music/timeline)
         OnBossStarted?.Invoke(bossGO);
@@ -167,10 +315,6 @@ public class GameFlowManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Register a boss instance so we can listen for its death.
-    /// Call this for dynamically spawned bosses (or pre-placed ones).
-    /// </summary>
     public void RegisterBoss(BossHealth boss)
     {
         if (boss == null) return;
@@ -178,14 +322,15 @@ public class GameFlowManager : MonoBehaviour
 
         trackedBosses.Add(boss);
 
+        // once we register at least one boss, confirm boss-phase
+        bossPhaseStarted = true;
+        bossPhaseConfirmed = true;
+
         Action handler = () => OnBossDied(boss);
         boss.OnDie += handler;
         bossDeathHandlers[boss] = handler;
     }
 
-    /// <summary>
-    /// Unregister a boss (and unsubscribe).
-    /// </summary>
     public void UnregisterBoss(BossHealth boss)
     {
         if (boss == null) return;
@@ -204,26 +349,42 @@ public class GameFlowManager : MonoBehaviour
     {
         if (boss != null) UnregisterBoss(boss);
 
-        // If there are no more tracked bosses and the boss phase has started, handle defeat in Update (or do it here)
-        if (bossPhaseStarted && trackedBosses.Count == 0)
+        // If there are no more tracked bosses and the boss phase has started/confirmed, handle defeat here.
+        if (bossPhaseStarted && bossPhaseConfirmed && trackedBosses.Count == 0)
         {
             OnBossDefeated?.Invoke();
             EndGame("GAME CLEAR");
         }
     }
 
-    /// <summary>
-    /// Find & register any BossHealth instances already present in the scene at start.
-    /// </summary>
     private void RegisterAllExistingBosses()
     {
+        // clear previous tracked data
+        trackedBosses.Clear();
+        foreach (var kv in new List<KeyValuePair<BossHealth, Action>>(bossDeathHandlers))
+        {
+            if (kv.Key != null && kv.Value != null)
+            {
+                try { kv.Key.OnDie -= kv.Value; } catch { }
+            }
+        }
+        bossDeathHandlers.Clear();
+
         var bosses = UnityEngine.Object.FindObjectsByType<BossHealth>(FindObjectsSortMode.None);
-        if (bosses == null || bosses.Length == 0) return;
+        if (bosses == null || bosses.Length == 0)
+        {
+            bossPhaseStarted = false;
+            bossPhaseConfirmed = false;
+            return;
+        }
 
-        foreach (var b in bosses)
-            RegisterBoss(b);
+        foreach (var b in bosses) RegisterBoss(b);
 
-        if (bosses.Length > 0) bossPhaseStarted = true; // if a boss already existed, mark boss-phase started
+        if (bosses.Length > 0)
+        {
+            bossPhaseStarted = true;
+            bossPhaseConfirmed = true;
+        }
     }
 
     // ---------------- UI / end game ----------------
@@ -289,19 +450,45 @@ public class GameFlowManager : MonoBehaviour
             }
         }
 
+        // Show number of projectiles cleared below average accuracy
+        if (projectilesClearedText != null)
+        {
+            projectilesClearedText.gameObject.SetActive(true);
+            projectilesClearedText.text = $"Projectiles Cleared:\n{projectilesCleared}";
+        }
+
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
     }
 
     private void RetryGame()
     {
+        // Reset state now to avoid race/leftover state before the scene reload happens.
+        ResetRuntimeState();
+
+        // Ensure time is running before reloading
         Time.timeScale = 1f;
+
+        //Return to default BGM
+        SoundManager.PlayDefaultBGM(0.5f);
+
+        // Use your Loader helper as before
         Loader.Load(Loader.Scene.GameScene);
     }
 
     private void ReturnHome()
     {
         Time.timeScale = 1f;
+
+        SoundManager.PlayDefaultBGM(0.5f);
+
         Loader.Load(Loader.Scene.MainMenu);
+    }
+
+    // ---------------- Defensive Mini-Game integration ----------------
+
+    private void HandleProjectileCleared(Projectile projectile)
+    {
+        projectilesCleared++;
     }
 }

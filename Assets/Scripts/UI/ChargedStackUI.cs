@@ -7,7 +7,6 @@ using UnityEngine.UI;
 public class ChargedStackUI : MonoBehaviour
 {
     [Header("References")]
-    [Tooltip("Drag your ProjectileChargeManager here (you said you'll assign it).")]
     [SerializeField] private ProjectileChargeManager manager;
 
     [Tooltip("Prefab or scene Image used as a single icon template. If this Image is already a child of this GameObject it will be used as the template and hidden.")]

@@ -1,57 +1,63 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Playables;
 
 public class EnemySpawner : MonoBehaviour
 {
     [Header("Spawner Settings")]
-    [Tooltip("Manual spawn points. A group will be created for each assigned manual spawn point.")]
     public List<Transform> manualSpawnPoints = new List<Transform>();
-    [Tooltip("Prefab that contains EnemyGroup component.")]
     public GameObject groupPrefab;
-    [Tooltip("How many groups to spawn initially. Clamped to manualSpawnPoints count.")]
     public int groupsToSpawn = 3;
 
     [Header("Continuous spawning (optional)")]
     public bool continuousSpawning = false;
-    [Tooltip("Seconds between spawn attempts when continuousSpawning is enabled.")]
     public float spawnInterval = 6f;
-    [Tooltip("Maximum total concurrent live enemies across all groups.")]
     public int maxConcurrentEnemies = 50;
 
     [Header("Group respawn (random per point)")]
-    [Tooltip("Minimum seconds to wait before respawning a group at the same manual point after its members are gone.")]
     public float groupRespawnDelayMin = 15f;
-    [Tooltip("Maximum seconds to wait before respawning a group at the same manual point after its members are gone.")]
     public float groupRespawnDelayMax = 30f;
-    [Tooltip("How often (seconds) the spawner checks manual points for respawn opportunities.")]
     public float respawnCheckInterval = 3f;
 
     [Header("Boss spawn")]
-    public GameObject bossPrefab;
+    public GameObject bossPrefab;                 // the real boss (AI, combat logic)
     public Transform bossSpawnPoint;
     public float bossSpawnDelay = 30f;
-    [Tooltip("After the boss spawns, multiply spawnInterval by this value (e.g. 2.0 -> half the spawn rate).")]
     public float postBossSpawnIntervalMultiplier = 2f;
-    [Tooltip("After the boss spawns, set maxConcurrentEnemies to this value.")]
     public int postBossMaxEnemies = 25;
 
+    [Header("Cutscene (Timeline) - keep simple")]
+    [Tooltip("PlayableDirector with the Timeline that plays the cutscene (camera + visuals).")]
+    public PlayableDirector cutsceneDirector;
+
+    [Tooltip("Set player health to invisible during cutscene")]
+    public Health playerHealth;
+
+    [Tooltip("Small buffer after cutscene ends before spawning real boss.")]
+    public float cutscenePostDelay = 0.25f;
+
     [Header("Global spawn timing (applies to all groups)")]
-    [Tooltip("Minimum delay between global successive member spawns.")]
     public float minSpawnDelayPerMember = 0.05f;
-    [Tooltip("Maximum delay between global successive member spawns.")]
     public float maxSpawnDelayPerMember = 0.35f;
 
     [Header("Obstacle Check (fallback)")]
     public float checkRadius = 1f;
     public LayerMask obstacleMask;
 
-    // runtime
-    private readonly List<EnemyGroup> activeGroups = new();
-    private readonly Dictionary<Transform, EnemyGroup> groupByPoint = new();
-    private readonly Dictionary<Transform, float> lastSpawnTimeByPoint = new();
-    private readonly Dictionary<Transform, float> respawnDelayByPoint = new();
+    [Header("Cutscene BGM")]
+    [Tooltip("Direct AudioClip to fade into for the cutscene")]
+    public int cutsceneBgmIndex = 1;
+
+    [Tooltip("Fade time (seconds) used for crossfading into the cutscene BGM.")]
+    public float bgmFadeDuration = 1f;
+
+    // runtime bookkeeping
+    private readonly List<EnemyGroup> activeGroups = new List<EnemyGroup>();
+    private readonly Dictionary<Transform, EnemyGroup> groupByPoint = new Dictionary<Transform, EnemyGroup>();
+    private readonly Dictionary<Transform, float> lastSpawnTimeByPoint = new Dictionary<Transform, float>();
+    private readonly Dictionary<Transform, float> respawnDelayByPoint = new Dictionary<Transform, float>();
 
     private Coroutine continuousSpawnRoutine;
     private Coroutine respawnLoopRoutine;
@@ -59,7 +65,7 @@ public class EnemySpawner : MonoBehaviour
 
     public event Action<GameObject> OnBossSpawned;
 
-    // --- spawn queue for serialised global spawning ---
+    // spawn queue for serialized global spawning
     private struct SpawnRequest
     {
         public GameObject prefab;
@@ -69,14 +75,16 @@ public class EnemySpawner : MonoBehaviour
         public Action<GameObject> onSpawned;
     }
 
-    private readonly Queue<SpawnRequest> spawnQueue = new();
+    private readonly Queue<SpawnRequest> spawnQueue = new Queue<SpawnRequest>();
     private Coroutine spawnProcessorCoroutine;
+
+    // cutscene wait flag
+    private bool directorStoppedFlag = false;
 
     private void Start()
     {
         if (manualSpawnPoints == null) manualSpawnPoints = new List<Transform>();
 
-        // initialize bookkeeping maps
         foreach (var pt in manualSpawnPoints)
         {
             if (pt == null) continue;
@@ -85,7 +93,6 @@ public class EnemySpawner : MonoBehaviour
             respawnDelayByPoint[pt] = UnityEngine.Random.Range(groupRespawnDelayMin, groupRespawnDelayMax);
         }
 
-        // initial spawn - spawn up to groupsToSpawn groups at manual points (first N points)
         int spawnCount = Mathf.Clamp(groupsToSpawn, 0, manualSpawnPoints.Count);
         for (int i = 0; i < spawnCount; i++)
         {
@@ -96,14 +103,11 @@ public class EnemySpawner : MonoBehaviour
             respawnDelayByPoint[pt] = UnityEngine.Random.Range(groupRespawnDelayMin, groupRespawnDelayMax);
         }
 
-        // continuous spawning (optional)
         if (continuousSpawning)
             continuousSpawnRoutine = StartCoroutine(ContinuousSpawnLoop());
 
-        // periodic respawn check for manual points
         respawnLoopRoutine = StartCoroutine(ManualPointRespawnLoop());
 
-        // boss timer
         if (bossPrefab != null)
             StartCoroutine(BossSpawnTimer());
     }
@@ -112,28 +116,82 @@ public class EnemySpawner : MonoBehaviour
     {
         yield return new WaitForSeconds(bossSpawnDelay);
 
+        // If a Timeline (PlayableDirector) is assigned, play it, wait for it to stop, then spawn the boss.
+        if (cutsceneDirector != null)
+        {
+            // Make player invincible during cutscene.
+            if (playerHealth != null)
+            {
+                playerHealth.invincible = true;
+            }
+
+            SoundManager.CrossfadeToBGMIndex(cutsceneBgmIndex, bgmFadeDuration);
+
+            // Prepare director stopped flag and subscribe to stopped event.
+            directorStoppedFlag = false;
+            cutsceneDirector.stopped += OnDirectorStopped;
+
+            // Ensure director's GameObject is active and start from beginning.
+            cutsceneDirector.gameObject.SetActive(true);
+            cutsceneDirector.time = 0;
+            cutsceneDirector.Play();
+
+            // Wait until the director stops (set by OnDirectorStopped).
+            yield return new WaitUntil(() => directorStoppedFlag);
+
+            // Unsubscribe (best-effort).
+            try { cutsceneDirector.stopped -= OnDirectorStopped; } catch { }
+
+            // small buffer
+            yield return new WaitForSeconds(cutscenePostDelay);
+
+            // spawn the real boss
+            SpawnRealBossAtPoint();
+        }
+        else
+        {
+            // no cutscene director — spawn immediately
+            SpawnRealBossAtPoint();
+        }
+    }
+
+    private void OnDirectorStopped(PlayableDirector director)
+    {
+        directorStoppedFlag = true;
+    }
+
+    private void SpawnRealBossAtPoint()
+    {
+        if (bossHasSpawned) return;
+
         Vector3 pos = bossSpawnPoint != null ? bossSpawnPoint.position : transform.position;
         Quaternion rot = bossSpawnPoint != null ? bossSpawnPoint.rotation : Quaternion.identity;
-        var bossGO = Instantiate(bossPrefab, pos, rot);
 
+        GameObject bossGO = Instantiate(bossPrefab, pos, rot);
         bossHasSpawned = true;
 
-        // reduce spawn pressure
+        // adjust global spawn pressure
         spawnInterval *= Mathf.Max(0.01f, postBossSpawnIntervalMultiplier);
         maxConcurrentEnemies = Mathf.Max(1, postBossMaxEnemies);
 
-        // invoke event with spawned GameObject (listeners can extract BossHealth)
         OnBossSpawned?.Invoke(bossGO);
+
+        // Make player vulnerable again.
+        if (playerHealth != null)
+        {
+            playerHealth.invincible = false;
+        }
     }
 
     private IEnumerator ContinuousSpawnLoop()
     {
         while (true)
         {
-            // only spawn if we are below desired active groups count (clamped to manual points)
+            // simple throttle while boss cutscene might be playing (optional)
+            yield return new WaitForSeconds(spawnInterval);
+
             if (manualSpawnPoints.Count > 0 && activeGroups.Count < manualSpawnPoints.Count)
             {
-                // pick a random manual point to place a new group (that doesn't already have an active group)
                 var shuffled = new List<Transform>(manualSpawnPoints);
                 for (int i = shuffled.Count - 1; i > 0; i--)
                 {
@@ -153,8 +211,6 @@ public class EnemySpawner : MonoBehaviour
                     }
                 }
             }
-
-            yield return new WaitForSeconds(spawnInterval);
         }
     }
 
@@ -162,7 +218,6 @@ public class EnemySpawner : MonoBehaviour
     {
         while (true)
         {
-            // iterate manual spawn points and respawn if needed
             foreach (var pt in manualSpawnPoints)
             {
                 if (pt == null) continue;
@@ -174,13 +229,11 @@ public class EnemySpawner : MonoBehaviour
                 bool needRespawn = false;
                 if (existingGroup == null)
                 {
-                    // nothing there -> spawn if respawn delay passed
                     if (Time.time - lastSpawn >= delayForThisPoint)
                         needRespawn = true;
                 }
                 else
                 {
-                    // group exists: if it finished spawning and has zero members -> consider respawn
                     if (existingGroup.SpawnCompleted && (existingGroup.Members == null || existingGroup.Members.Count == 0))
                     {
                         if (Time.time - lastSpawn >= delayForThisPoint)
@@ -190,28 +243,22 @@ public class EnemySpawner : MonoBehaviour
 
                 if (needRespawn)
                 {
-                    // check overall enemy capacity (avoid bursting when arena full)
                     if (CanSpawnEnemy())
                     {
-                        // destroy old group object if it exists (clean up) - call group's ForceDestroyGroup()
                         if (existingGroup != null)
                         {
                             try
                             {
-                                // allow the group to perform proper cleanup (detach restricted area etc.)
                                 existingGroup.ForceDestroyGroup();
                             }
                             catch
                             {
-                                // fallback to best-effort destroy
                                 try { Destroy(existingGroup.gameObject); } catch { }
-                                // ensure it's removed from our lists if fallback used
                                 activeGroups.Remove(existingGroup);
                                 groupByPoint[pt] = null;
                             }
                         }
 
-                        // Spawn new group at this point
                         SpawnGroupAtPoint(pt.position, pt.rotation, pt);
                         lastSpawnTimeByPoint[pt] = Time.time;
                         respawnDelayByPoint[pt] = UnityEngine.Random.Range(groupRespawnDelayMin, groupRespawnDelayMax);
@@ -253,7 +300,6 @@ public class EnemySpawner : MonoBehaviour
 
     /// <summary>
     /// Enqueue a member spawn request to be processed by the spawner's global queue.
-    /// group supplies an onSpawned callback to receive the instantiated GameObject.
     /// </summary>
     public void EnqueueSpawn(GameObject prefab, Vector3 pos, Quaternion rot, EnemyGroup group, Action<GameObject> onSpawned)
     {
@@ -285,19 +331,15 @@ public class EnemySpawner : MonoBehaviour
         {
             var req = spawnQueue.Dequeue();
 
-            // wait until global capacity allows another enemy
             while (!CanSpawnEnemy())
             {
                 yield return new WaitForSeconds(0.25f);
             }
 
-            // instantiate
             GameObject go = Instantiate(req.prefab, req.pos, req.rot);
 
-            // call back group for post-setup (adding to group.members, subscribing to OnDie, etc.)
             try { req.onSpawned?.Invoke(go); } catch { }
 
-            // wait randomized global delay before next spawn
             float delay = UnityEngine.Random.Range(minSpawnDelayPerMember, maxSpawnDelayPerMember);
             yield return new WaitForSeconds(delay);
         }
@@ -330,10 +372,8 @@ public class EnemySpawner : MonoBehaviour
     {
         if (group == null) return;
 
-        // remove from activeGroups list
         activeGroups.Remove(group);
 
-        // clear mapping of any manual spawn point that pointed to this group
         foreach (var kv in new List<Transform>(groupByPoint.Keys))
         {
             if (groupByPoint[kv] == group)

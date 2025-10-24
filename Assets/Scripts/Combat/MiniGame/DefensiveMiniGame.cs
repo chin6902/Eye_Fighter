@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -13,6 +14,8 @@ using UnityEngine.UI;
 public class DefensiveMiniGame : MonoBehaviour
 {
     public static DefensiveMiniGame Instance { get; private set; }
+
+    public static event Action<Projectile> OnProjectileCleared;
 
     // queued registrations if called before Awake
     private static readonly List<Projectile> s_pendingRegistrations = new();
@@ -395,6 +398,10 @@ public class DefensiveMiniGame : MonoBehaviour
                 {
                     var v = Instantiate(deflectVfxPrefab, sd.projectile.transform.position, Quaternion.identity);
                     if (deflectVfxLifetime > 0f) Destroy(v, deflectVfxLifetime);
+
+                    SoundManager.PlaySFX(SoundType.Clear, 0.6f);
+
+                    OnProjectileCleared?.Invoke(sd.projectile);
                 }
 
                 if (sd.projectile != null)

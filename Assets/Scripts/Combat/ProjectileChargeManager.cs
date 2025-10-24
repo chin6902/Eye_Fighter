@@ -21,10 +21,10 @@ public class ProjectileChargeManager : MonoBehaviour
     private int _count = 0;
 
     // events
-    public event Action<int> OnChargesChanged;          // passes current count
-    public event Action OnChargeAdded;                 // fired when a charge is added
-    public event Action OnChargeUsed;                  // fired when a charge is consumed
-    public event Action OnChargeMaxReached;            // fired when add would reach max
+    public event Action<int> OnChargesChanged;    
+    public event Action OnChargeAdded;         
+    public event Action OnChargeUsed;        
+    public event Action OnChargeMaxReached;      
 
     private void Awake()
     {
@@ -35,7 +35,6 @@ public class ProjectileChargeManager : MonoBehaviour
         }
 
         Instance = this;
-        DontDestroyOnLoad(gameObject);
 
         // sanitize config
         maxCharges = Mathf.Max(1, maxCharges);

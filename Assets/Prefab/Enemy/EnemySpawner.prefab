@@ -58,7 +58,7 @@ MonoBehaviour:
   - {fileID: 8639315290719105852}
   groupPrefab: {fileID: 3158319727971702503, guid: 8120b31f6f5ec38438d698dcf1871136, type: 3}
   groupsToSpawn: 5
-  continuousSpawning: 1
+  continuousSpawning: 0
   spawnInterval: 10
   maxConcurrentEnemies: 15
   groupRespawnDelayMin: 15
@@ -69,12 +69,17 @@ MonoBehaviour:
   bossSpawnDelay: 30
   postBossSpawnIntervalMultiplier: 5
   postBossMaxEnemies: 5
+  cutsceneDirector: {fileID: 0}
+  playerHealth: {fileID: 0}
+  cutscenePostDelay: 0.25
   minSpawnDelayPerMember: 2
   maxSpawnDelayPerMember: 6
   checkRadius: 3
   obstacleMask:
     serializedVersion: 2
     m_Bits: 128
+  cutsceneBgmIndex: 1
+  bgmFadeDuration: 1
 --- !u!1 &1197800749390221603
 GameObject:
   m_ObjectHideFlags: 0
