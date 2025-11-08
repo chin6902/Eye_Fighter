@@ -20,6 +20,11 @@ namespace KinematicCharacterController.Walkthrough.AddingImpulses
 
         [SerializeField] private GetEnemy enemyFinder;
         [SerializeField] float CameraVirtSensitivity = 50f;
+        [SerializeField] float defaultxViewportPos = 0.5f;
+        [SerializeField] float defaultyViewportPos = 0.65f;
+        [SerializeField] float bossxViewportPos = 0.5f;
+        [SerializeField] float bossyViewportPos = 0.3f;
+
         Vector2 desiredViewportPos = new Vector2(0.5f, 0.65f);
 
         private void Start()
@@ -84,6 +89,16 @@ namespace KinematicCharacterController.Walkthrough.AddingImpulses
                     Vector2 currentVP = new Vector2(vp.x, vp.y);
 
                     // 2. Compute offset to desired
+
+                    if(GameManager.Instance.currentGamePhase == GameManager.MiniGamePhase.BossMiniGamePhase)
+                    {
+                        desiredViewportPos = new Vector2(bossxViewportPos, bossyViewportPos);
+                    }
+                    else
+                    {
+                        desiredViewportPos = new Vector2(defaultxViewportPos, defaultyViewportPos);
+                    }
+
                     Vector2 delta = currentVP - desiredViewportPos;
 
                     // 3. Convert to virtual mouse

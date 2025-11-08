@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -105,6 +106,10 @@ public class BossController : MonoBehaviour
     // Expose multiplier so states can read if needed (e.g. to slow thrust movement)
     public float SpeedMultiplier => speedMultiplier;
 
+    private bool _isAwaitingMiniGameState = false;
+
+    public bool IsAwaitingMiniGameState => _isAwaitingMiniGameState;
+
     private void Awake()
     {
         animator = GetComponentInChildren<Animator>();
@@ -131,7 +136,11 @@ public class BossController : MonoBehaviour
             bossHealth.OnSlowed += HandleBossSlowed;
             // subscribe to charged-hit (element + duration)
             bossHealth.OnChargedHit += HandleChargedHit;
-            bossHealth.OnTakeDamagePopUp += HandleBossDamagePopup; // optional logging hook (no-op if unused)
+            bossHealth.OnTakeDamagePopUp += HandleBossDamagePopup;
+
+            bossHealth.OnReachedZero += HandleReachedZero;
+            bossHealth.OnRecoveredFromMiniGame += HandleRecoveredFromMiniGame;
+            bossHealth.OnDie += HandleFinalDeath;
         }
     }
 
@@ -145,7 +154,7 @@ public class BossController : MonoBehaviour
 
     private void Update()
     {
-        if (!alive) return;
+        if (!alive || _isAwaitingMiniGameState) return;
 
         // update attack cooldown
         if (attackCooldownTimer > 0f)
@@ -197,6 +206,10 @@ public class BossController : MonoBehaviour
             bossHealth.OnSlowed -= HandleBossSlowed;
             bossHealth.OnChargedHit -= HandleChargedHit;
             bossHealth.OnTakeDamagePopUp -= HandleBossDamagePopup;
+
+            bossHealth.OnReachedZero -= HandleReachedZero;
+            bossHealth.OnRecoveredFromMiniGame -= HandleRecoveredFromMiniGame;
+            bossHealth.OnDie -= HandleFinalDeath;
         }
     }
 
@@ -380,5 +393,57 @@ public class BossController : MonoBehaviour
         WalkSpeed = Mathf.Max(0f, WalkSpeed);
         MinMissileCount = Mathf.Max(0, MinMissileCount);
         MaxMissileCount = Mathf.Max(MinMissileCount, MaxMissileCount);
+    }
+
+    private void HandleReachedZero()
+    {
+        // mark internal flag
+        _isAwaitingMiniGameState = true;
+
+        // switch to death/awaiting state (stops movement/attacks)
+        ChangeState(new BossDeathState(this));
+    }
+
+    private void HandleRecoveredFromMiniGame()
+    {
+        if (!_isAwaitingMiniGameState)
+        {
+            Debug.LogWarning("[BossController] Ignored OnRecoveredFromMiniGame: not awaiting mini-game.");
+            return;
+        }
+
+        // play revive animation and return to idle behavior
+        StartCoroutine(ReviveRoutine());
+    }
+
+    private System.Collections.IEnumerator ReviveRoutine()
+    {
+        // clear the awaiting flag so controller can return to normal once idle state is entered
+        _isAwaitingMiniGameState = false;
+
+        if (animator != null)
+        {
+            // If you used a bool for death pose, clear it so revive animation can play cleanly
+            animator.SetBool("Die", false);
+
+            // Trigger the revive animation (ensure "Revive" trigger exists in your animator)
+            animator.SetTrigger("Revive");
+        }
+
+        // Wait a short moment to let revive animation start (adjust if you want to wait until full animation)
+        yield return new WaitForSeconds(2f);
+
+        // return to the idle behavior
+        ChangeState(WaitState);
+    }
+
+    // Called when boss is finally dead (mini-game cleared -> boss.FinalizeDeath() -> OnDie fired)
+    private void HandleFinalDeath()
+    {
+        _isAwaitingMiniGameState = false;
+
+        Die();
+
+        ChangeState(new BossDeadPermanentState(this));
     }
 }

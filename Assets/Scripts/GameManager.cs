@@ -24,6 +24,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private GameObject GazeDotCanvas;
     [SerializeField] private GameObject Phase1;
     [SerializeField] private GameObject Phase2;
+    [SerializeField] private GameObject BossMiniGame;
 
     [Header("Phase Durations")]
     [Tooltip("Seconds for Element Select Phase")]
@@ -32,6 +33,8 @@ public class GameManager : MonoBehaviour
     [Tooltip("Seconds for Gaze Trace Phase")]
     public float GazeTraceDuration = 13f;
 
+    [Tooltip("Seconds for BossMiniGame Phase")]
+    public float BossMiniGameDuration = 13f;
 
     [Header("Auto Exit Settings")]
     public float autoExitCheckDelay = 3f;
@@ -74,7 +77,8 @@ public class GameManager : MonoBehaviour
 
     public Action<float> onDefensiveGaugeChanged;
 
-
+    [Header("BossMiniGame")]
+    private BossHealth _bossInMiniGame = null;
 
     public Transform CurrentGazeTarget { get; private set; }
     private int currentGazeTargetIndex = -1;
@@ -86,7 +90,8 @@ public class GameManager : MonoBehaviour
     {
         None,
         ElementSelectPhase,
-        GazeTracePhase
+        GazeTracePhase,
+        BossMiniGamePhase
     }
 
     public MiniGamePhase currentGamePhase;
@@ -186,17 +191,27 @@ public class GameManager : MonoBehaviour
     /// </summary>
     private void HandleTimers()
     {
-        if (currentGamePhase == MiniGamePhase.ElementSelectPhase || currentGamePhase == MiniGamePhase.GazeTracePhase)
+        if (currentGamePhase == MiniGamePhase.ElementSelectPhase || currentGamePhase == MiniGamePhase.GazeTracePhase || currentGamePhase == MiniGamePhase.BossMiniGamePhase)
         {
             time -= Time.unscaledDeltaTime;
 
-            float max = (currentGamePhase == MiniGamePhase.ElementSelectPhase) ? ElementSelectDuration : GazeTraceDuration;
+            float max = (currentGamePhase == MiniGamePhase.ElementSelectPhase) ? ElementSelectDuration
+                    : (currentGamePhase == MiniGamePhase.GazeTracePhase) ? GazeTraceDuration
+                    : BossMiniGameDuration;
+
             onPhaseTimerChanged?.Invoke(time, max, currentGamePhase);
 
             if (time <= 0f)
             {
                 Debug.Log($"{currentGamePhase} timed out.");
-                ExitGazeMode();
+                if (currentGamePhase == MiniGamePhase.BossMiniGamePhase)
+                {
+                    EndBossMiniGame(false);
+                }
+                else
+                {
+                    ExitGazeMode();
+                }
             }
         }
     }
@@ -345,6 +360,7 @@ public class GameManager : MonoBehaviour
         GazeDotCanvas.SetActive(isActive);
         Phase1.SetActive(phase == MiniGamePhase.ElementSelectPhase && isActive);
         Phase2.SetActive(phase == MiniGamePhase.GazeTracePhase && isActive);
+        BossMiniGame.SetActive(phase == MiniGamePhase.BossMiniGamePhase && isActive);
     }
 
     /// <summary>
@@ -477,4 +493,103 @@ public class GameManager : MonoBehaviour
     }
 
     public float DefensiveGaugeNormalized => DefensiveGaugeMax > 0f ? (_defensiveGauge / DefensiveGaugeMax) : 0f;
+
+    /// <summary>
+    /// BossMiniGame start: puts player into boss mini-game mode targeting the specified boss.
+    /// </summary>
+    public void StartBossMiniGame(BossHealth boss)
+    {
+        if (boss == null) return;
+        Debug.Log("Starting Boss MiniGame targeting: " + boss.name);
+
+        currentGamePhase = MiniGamePhase.BossMiniGamePhase;
+        GazeMode = true;
+        time = BossMiniGameDuration;
+
+        _bossInMiniGame = boss;
+
+        // set gaze target to the boss transform so gaze systems point at it
+        CurrentGazeTarget = boss.transform;
+        currentGazeTargetIndex = -1;
+
+        ApplySlowMotion(true, 0.3f);
+        SetGazeCanvas(true, MiniGamePhase.BossMiniGamePhase);
+
+        // Start the mini-game logic
+        if (BossMiniGame != null)
+        {
+            var mini = BossMiniGame.GetComponent<BossMiniGame>();
+            if (mini != null)
+            {
+                mini.SetBossTarget(boss);
+
+                mini.StartMiniGame();
+            }
+        }
+    }
+
+    /// <summary>
+    /// BossMiniGame end: called when mini-game is cleared or failed.
+    /// <summary>
+    public void EndBossMiniGame(bool cleared)
+    {
+        // If there was no boss tracked (defensive), just exit gaze mode.
+        if (_bossInMiniGame == null)
+        {
+            ExitGazeMode();
+            return;
+        }
+
+        var boss = _bossInMiniGame;
+        _bossInMiniGame = null; // clear the stored reference immediately so other flows don't confuse it
+
+        if (cleared)
+        {
+            //Boss mini-game cleared. Finalizing boss (if not already finalized by cutscene)
+
+            try
+            {
+                if (!boss.IsFinalizedDead)
+                {
+                    boss.FinalizeDeath();
+                }
+                else
+                {
+                    Debug.Log("[GameManager] Boss already finalized by cutscene; skipping FinalizeDeath().");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[GameManager] Failed to finalize boss death: " + ex);
+            }
+        }
+        else
+        {
+            //Boss mini-game failed. Recovering boss HP and resuming combat.
+            try
+            {
+                boss.RecoverFromMiniGame(0.2f);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[GameManager] Failed boss.RecoverFromMiniGame(): " + ex);
+            }
+        }
+
+        // Now that the boss is finalized or recovered, hide gaze UI and return to normal gameplay.
+        ExitGazeMode();
+    }
+
+
+    public void ResetBossMiniGameTimer()
+    {
+        if (currentGamePhase != MiniGamePhase.BossMiniGamePhase)
+        {
+            // Only reset if we're actually in the boss mini-game.
+            return;
+        }
+
+        time = BossMiniGameDuration;
+        onPhaseTimerChanged?.Invoke(time, BossMiniGameDuration, currentGamePhase);
+    }
 }

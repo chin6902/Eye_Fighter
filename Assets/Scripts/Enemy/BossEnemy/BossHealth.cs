@@ -25,15 +25,22 @@ public class BossHealth : MonoBehaviour
     public event Action OnTakeDamage;
     public event Action<int> OnTakeDamagePopUp;
     public event Action OnDie;
+    public event Action OnReachedZero;
+    public event Action OnRecoveredFromMiniGame;
 
     // Special effect events (BossController should subscribe to these)
-    // multiplier: e.g. 0.5f for 50% speed, duration seconds
     public event Action<float, float> OnSlowed;                         // (multiplier, duration)
     public event Action<float> OnStunned;                               // (duration)
     public event Action OnPrimedFire;                                   // fired when fire-charge primes boss (next hit doubled)
-    public event Action<GameManager.ElementType, float> OnChargedHit;   // (element, duration) - immediate visual hook
+    public event Action<GameManager.ElementType, float> OnChargedHit;   // (element, duration)
 
     private Coroutine _primeClearCoroutine;
+
+    private bool _awaitingMiniGame = false;
+
+    private bool _finalizedDead = false;
+
+    public bool IsFinalizedDead => _finalizedDead;
 
     private void Awake()
     {
@@ -46,6 +53,7 @@ public class BossHealth : MonoBehaviour
     public void DealDamage(int damage)
     {
         if (CurrentHP <= 0) return;
+        if (_awaitingMiniGame) return; // ignore damage while awaiting mini-game
 
         int newHp = Mathf.Max(CurrentHP - Mathf.Max(0, damage), 0);
 
@@ -57,7 +65,7 @@ public class BossHealth : MonoBehaviour
 
         if (CurrentHP <= 0)
         {
-            Die();
+            EnterAwaitingMiniGame();
         }
     }
 
@@ -73,6 +81,7 @@ public class BossHealth : MonoBehaviour
     public void ReceiveElementalDamage(GameManager.ElementType attackerElement, float accuracy)
     {
         if (CurrentHP <= 0) return;
+        if (_awaitingMiniGame) return; // ignore elemental damage while awaiting mini-game
 
         bool charged = false;
         if (ProjectileChargeManager.Instance != null && ProjectileChargeManager.Instance.CanUse())
@@ -156,6 +165,79 @@ public class BossHealth : MonoBehaviour
     public void SetHP(int hp)
     {
         CurrentHP = Mathf.Clamp(hp, 0, int.MaxValue);
-        if (CurrentHP == 0) Die();
+        if (CurrentHP == 0)
+        {
+            EnterAwaitingMiniGame();
+        }
+    }
+
+    // BossMiniGame
+
+    private void EnterAwaitingMiniGame()
+    {
+        if (_awaitingMiniGame) return;
+
+        _awaitingMiniGame = true;
+        CurrentHP = 0;
+
+        OnReachedZero?.Invoke();
+    }
+
+    public void FinalizeDeath()
+    {
+        // make finalization idempotent
+        if (_finalizedDead) return;
+
+        _finalizedDead = true;
+
+        // no longer awaiting the mini-game (safety)
+        _awaitingMiniGame = false;
+
+        // ensure HP is zero
+        CurrentHP = 0;
+
+        // invoke OnDie -> subscribers (BossController.HandleFinalDeath etc.)
+        Die();
+
+        // Optionally: clear any primes/effects
+        ClearFirePrime();
+    }
+
+    // recover some HP and resume normal combat.
+    public void RecoverFromMiniGame(float recoverToFraction = 0.5f)
+    {
+        // If boss was finalized-dead, ignore any recovery attempts.
+        if (_finalizedDead)
+        {
+            Debug.LogWarning("[BossHealth] RecoverFromMiniGame ignored because boss has been finalized dead.");
+            return;
+        }
+
+        if (!_awaitingMiniGame) return;
+        _awaitingMiniGame = false;
+
+        int recoverHP = Mathf.Max(1, Mathf.CeilToInt(maxHP * Mathf.Clamp01(recoverToFraction)));
+        CurrentHP = recoverHP;
+
+        OnTakeDamage?.Invoke();
+        OnRecoveredFromMiniGame?.Invoke();
+    }
+
+    public bool IsAwaitingMiniGame => _awaitingMiniGame;
+
+    private void BossDamageDebugger()
+    {
+        DealDamage(maxHP);
+    }
+
+    private void Update()
+    {
+        // Debug key
+        if (Input.GetKeyDown(KeyCode.L))
+        {
+            BossDamageDebugger();
+        }
     }
 }
+
+

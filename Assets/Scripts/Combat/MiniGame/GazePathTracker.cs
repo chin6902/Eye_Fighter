@@ -5,7 +5,7 @@ public class GazePathTracker : MonoBehaviour
 {
     public static GazePathTracker Instance;
 
-    public GazeDot gazeDot;                 // expects a 'dotRect' RectTransform on it
+    public GazeDot gazeDot;                
     public CurvedPathGenerator pathGenerator;
 
     // runtime
@@ -17,7 +17,7 @@ public class GazePathTracker : MonoBehaviour
     private int curveTotalCount = 0;
 
     // pattern-mode (barrier) state
-    private List<bool> groupStarted;     // per-group: whether its start marker was touched
+    private List<bool> groupStarted;   
     private int patternHitCount = 0;
     private int patternTotalCount = 0;
 

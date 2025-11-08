@@ -47,6 +47,7 @@ public class GameFlowManager : MonoBehaviour
     private readonly HashSet<BossHealth> trackedBosses = new HashSet<BossHealth>();
     // stored handlers so we can unsubscribe cleanly
     private readonly Dictionary<BossHealth, Action> bossDeathHandlers = new Dictionary<BossHealth, Action>();
+    private readonly Dictionary<BossHealth, Action> bossReachedZeroHandlers = new Dictionary<BossHealth, Action>();
 
     // whether the boss-phase has started (boss spawn time reached)
     private bool bossPhaseStarted = false;
@@ -329,6 +330,10 @@ public class GameFlowManager : MonoBehaviour
         Action handler = () => OnBossDied(boss);
         boss.OnDie += handler;
         bossDeathHandlers[boss] = handler;
+
+        Action zeroHandler = () => GameManager.Instance.StartBossMiniGame(boss);
+        boss.OnReachedZero += zeroHandler;
+        bossReachedZeroHandlers[boss] = zeroHandler;
     }
 
     public void UnregisterBoss(BossHealth boss)
@@ -340,6 +345,12 @@ public class GameFlowManager : MonoBehaviour
         {
             try { boss.OnDie -= handler; } catch { }
             bossDeathHandlers.Remove(boss);
+        }
+
+        if (bossReachedZeroHandlers.TryGetValue(boss, out var zeroHandler) && zeroHandler != null)
+        {
+            try { boss.OnReachedZero -= zeroHandler; } catch { }
+            bossReachedZeroHandlers.Remove(boss);
         }
 
         trackedBosses.Remove(boss);
