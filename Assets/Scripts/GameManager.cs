@@ -19,6 +19,7 @@ public class GameManager : MonoBehaviour
     [Header("Player & Systems")]
     [SerializeField] private MyCharacterController MyCharacterController;
     [SerializeField] public GetEnemy enemyFinder;
+    [SerializeField] private EnemySpawner enemySpawner;
 
     [Header("UI")]
     [SerializeField] private GameObject GazeDotCanvas;
@@ -58,6 +59,7 @@ public class GameManager : MonoBehaviour
     [Header("GameFlow Settings")]
     public bool isPaused = false;
     public float CurrentTimeScale { get; private set; } = 1f;
+    private bool _phaseTimerLockedForCutscene = false;
 
     [Header("Defensive Gaze (Hold Q)")]
     [Tooltip("Max value of defensive gauge (starts full).")]
@@ -106,7 +108,6 @@ public class GameManager : MonoBehaviour
 
     public ElementType selectedElement { get; private set; } = ElementType.None;
 
-
     private void Awake()
     {
         if (Instance == null)
@@ -138,14 +139,15 @@ public class GameManager : MonoBehaviour
         UpdateDefensiveGauge();
     }
 
-    /// <summary>
-    /// Checks for player input each frame.
-    /// </summary>
     private void HandleInput()
     {
+        if (enemySpawner.playingCutscene)
+        {
+            return;
+        }
+
         if (Input.GetKeyDown(KeyCode.E) && currentGamePhase == MiniGamePhase.None)
         {
-            // allow if unlimited OR timer expired
             if (_unlimitedTimer > 0f || _skillTimer <= 0f)
             {
                 EnterElementSelectPhase();
@@ -153,10 +155,8 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        // Don't allow defensive gaze to start while offensive gaze mode is active
         if (!GazeMode)
         {
-            // Start/maintain while Q is held and there's gauge remaining
             if (Input.GetKey(KeyCode.Q))
             {
                 if (_defensiveGauge > 0f)
@@ -168,7 +168,6 @@ public class GameManager : MonoBehaviour
                 }
                 else
                 {
-                    // out of gauge -> force exit
                     if (_defensiveGazeActive)
                     {
                         ExitDefensiveGaze();
@@ -176,22 +175,21 @@ public class GameManager : MonoBehaviour
                 }
             }
 
-            // On Q release, exit defensive gaze
             if (Input.GetKeyUp(KeyCode.Q))
             {
                 if (_defensiveGazeActive)
+                {
                     ExitDefensiveGaze();
+                }
             }
         }
     }
 
-
-    /// <summary>
-    /// Updates timers for active phases.
-    /// </summary>
     private void HandleTimers()
     {
-        if (currentGamePhase == MiniGamePhase.ElementSelectPhase || currentGamePhase == MiniGamePhase.GazeTracePhase || currentGamePhase == MiniGamePhase.BossMiniGamePhase)
+        if (currentGamePhase == MiniGamePhase.ElementSelectPhase
+            || currentGamePhase == MiniGamePhase.GazeTracePhase
+            || currentGamePhase == MiniGamePhase.BossMiniGamePhase)
         {
             time -= Time.unscaledDeltaTime;
 
@@ -200,6 +198,11 @@ public class GameManager : MonoBehaviour
                     : BossMiniGameDuration;
 
             onPhaseTimerChanged?.Invoke(time, max, currentGamePhase);
+
+            if (_phaseTimerLockedForCutscene && currentGamePhase == MiniGamePhase.BossMiniGamePhase)
+            {
+                return;
+            }
 
             if (time <= 0f)
             {
@@ -218,18 +221,22 @@ public class GameManager : MonoBehaviour
 
     private void UpdateSkillTimers()
     {
-        // Regular cooldown
         if (_skillTimer > 0f)
         {
             _skillTimer -= Time.deltaTime;
-            if (_skillTimer < 0f) _skillTimer = 0f;
+            if (_skillTimer < 0f)
+            {
+                _skillTimer = 0f;
+            }
         }
 
-        // Unlimited buff expires
         if (_unlimitedTimer > 0f)
         {
             _unlimitedTimer -= Time.deltaTime;
-            if (_unlimitedTimer < 0f) _unlimitedTimer = 0f;
+            if (_unlimitedTimer < 0f)
+            {
+                _unlimitedTimer = 0f;
+            }
         }
 
         onSkillCooldownChanged?.Invoke(_skillTimer, SkillCooldown);
@@ -240,14 +247,14 @@ public class GameManager : MonoBehaviour
         if (_parryTimer > 0f)
         {
             _parryTimer -= Time.deltaTime;
-            if (_parryTimer < 0f) _parryTimer = 0f;
+            if (_parryTimer < 0f)
+            {
+                _parryTimer = 0f;
+            }
             onParryCooldownChanged?.Invoke(_parryTimer, ParryCooldown);
         }
     }
 
-    /// <summary>
-    /// Starts the Element Select Phase.
-    /// </summary>
     private void EnterElementSelectPhase()
     {
         Debug.Log("Element Select Phase started.");
@@ -276,9 +283,6 @@ public class GameManager : MonoBehaviour
         StartCoroutine(CheckAutoExitAfterDelay(autoExitCheckDelay));
     }
 
-    /// <summary>
-    /// Confirms the selected element & starts the Gaze Trace Phase.
-    /// </summary>
     public void ConfirmElementSelection()
     {
         Debug.Log("Element confirmed. Starting Gaze Trace Phase.");
@@ -293,20 +297,20 @@ public class GameManager : MonoBehaviour
         currentGamePhase = MiniGamePhase.GazeTracePhase;
         time = GazeTraceDuration;
 
-        ApplySlowMotion(true, 0.65f);
+        ApplySlowMotion(true, 0.5f);
         SetGazeCanvas(true, MiniGamePhase.GazeTracePhase);
 
         StartCoroutine(CheckAutoExitAfterDelay(autoExitCheckDelay));
     }
 
-    /// <summary>
-    /// Checks after a delay whether to auto-exit if no valid enemies remain.
-    /// </summary>
     private System.Collections.IEnumerator CheckAutoExitAfterDelay(float delay)
     {
         yield return new WaitForSecondsRealtime(delay);
 
-        if (!GazeMode) yield break;
+        if (!GazeMode)
+        {
+            yield break;
+        }
 
         enemyFinder.RefreshEnemies();
 
@@ -317,16 +321,32 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Cycles to next enemy in the list.
-    /// </summary>
     public void CycleGazeTarget()
     {
         if (!GazeMode || enemyFinder.Enemies.Count <= 1)
+        {
             return;
+        }
 
         currentGazeTargetIndex = (currentGazeTargetIndex + 1) % enemyFinder.Enemies.Count;
         CurrentGazeTarget = enemyFinder.Enemies[currentGazeTargetIndex];
+    }
+
+    /// <summary>
+    /// Helper to stop the boss mini-game cleanly (UI, trackers, pools) BEFORE we disable the canvas.
+    /// </summary>
+    private void StopBossMiniGameIfRunning() 
+    {
+        if (BossMiniGame == null)
+        {
+            return;
+        }
+
+        var mini = BossMiniGame.GetComponent<BossMiniGame>();
+        if (mini != null)
+        {
+            mini.StopMiniGameImmediate();
+        }
     }
 
     /// <summary>
@@ -336,8 +356,14 @@ public class GameManager : MonoBehaviour
     {
         Debug.Log("Exiting Gaze Mode");
 
+        // If we are in boss mini-game phase, stop it BEFORE turning off the canvas
+        if (currentGamePhase == MiniGamePhase.BossMiniGamePhase)
+        {
+            StopBossMiniGameIfRunning();
+        }
+
         GazeMode = false;
-        ApplySlowMotion(false, 1);
+        ApplySlowMotion(false, 1f);
 
         CurrentGazeTarget = null;
         currentGazeTargetIndex = -1;
@@ -352,9 +378,6 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Enables/disables UI canvases for phases.
-    /// </summary>
     public void SetGazeCanvas(bool isActive, MiniGamePhase phase)
     {
         GazeDotCanvas.SetActive(isActive);
@@ -363,9 +386,6 @@ public class GameManager : MonoBehaviour
         BossMiniGame.SetActive(phase == MiniGamePhase.BossMiniGamePhase && isActive);
     }
 
-    /// <summary>
-    /// Sets time scale and gravity for slow motion effect.
-    /// </summary>
     private void ApplySlowMotion(bool active, float slowAmount)
     {
         if (active)
@@ -399,7 +419,11 @@ public class GameManager : MonoBehaviour
 
     public bool TryUseParry()
     {
-        if (_parryTimer > 0f) return false;
+        if (_parryTimer > 0f)
+        {
+            return false;
+        }
+
         _parryTimer = ParryCooldown;
         onParryCooldownChanged?.Invoke(_parryTimer, ParryCooldown);
         onParryPerformed?.Invoke();
@@ -410,18 +434,13 @@ public class GameManager : MonoBehaviour
     {
         _defensiveGazeActive = true;
 
-        // Put the game into a slow-motion defensive state.
-        // Reuse your ApplySlowMotion method. Use DefensiveSlowAmount as a parameter.
         ApplySlowMotion(true, DefensiveSlowAmount);
 
-        // Enable gaze UI so the gaze dot system can be used (we pass MiniGamePhase.None so Phase1/2 stay off).
         SetGazeCanvas(true, MiniGamePhase.None);
 
-        // If you want to cancel existing offensive tracking for the defensive mode, ensure CurrentGazeTarget is nulled:
         CurrentGazeTarget = null;
         currentGazeTargetIndex = -1;
 
-        // Optionally notify UI that gauge changed (initial)
         onDefensiveGaugeChanged?.Invoke(_defensiveGauge);
     }
 
@@ -429,77 +448,87 @@ public class GameManager : MonoBehaviour
     {
         _defensiveGazeActive = false;
 
-        // Revert slow motion.
         ApplySlowMotion(false, 1f);
 
-        // Hide gaze UI
         SetGazeCanvas(false, MiniGamePhase.None);
 
-        // Clear any defensive-specific tracking (if needed)
         if (GazePathTracker.Instance != null)
         {
             GazePathTracker.Instance.StopTracking();
         }
     }
 
-    /* Called every frame from Update() to change gauge up/down and notify UI. */
     private void UpdateDefensiveGauge()
     {
         if (_defensiveGazeActive && Input.GetKey(KeyCode.Q))
         {
-            // consume gauge while Q is held
             _defensiveGauge -= DefensiveConsumePerSecond * Time.unscaledDeltaTime;
             if (_defensiveGauge <= 0f)
             {
                 _defensiveGauge = 0f;
-                // Auto-exit if gauge depleted
-                if (_defensiveGazeActive) ExitDefensiveGaze();
+                if (_defensiveGazeActive)
+                {
+                    ExitDefensiveGaze();
+                }
             }
 
             onDefensiveGaugeChanged?.Invoke(_defensiveGauge);
         }
         else
         {
-            // recover gauge when not holding Q
             if (_defensiveGauge < DefensiveGaugeMax)
             {
                 _defensiveGauge += DefensiveRecoverPerSecond * Time.deltaTime;
-                if (_defensiveGauge > DefensiveGaugeMax) _defensiveGauge = DefensiveGaugeMax;
+                if (_defensiveGauge > DefensiveGaugeMax)
+                {
+                    _defensiveGauge = DefensiveGaugeMax;
+                }
                 onDefensiveGaugeChanged?.Invoke(_defensiveGauge);
             }
         }
     }
 
-    /// Recover defensive gauge by `amount` (clamped to DefensiveGaugeMax) and notify listeners.
     public void RecoverDefensiveGauge(float amount)
     {
-        if (amount <= 0f) return;
+        if (amount <= 0f)
+        {
+            return;
+        }
+
         _defensiveGauge += amount;
-        if (_defensiveGauge > DefensiveGaugeMax) _defensiveGauge = DefensiveGaugeMax;
+        if (_defensiveGauge > DefensiveGaugeMax)
+        {
+            _defensiveGauge = DefensiveGaugeMax;
+        }
         onDefensiveGaugeChanged?.Invoke(_defensiveGauge);
     }
 
-    /// Try to consume `amount` defensive gauge. Returns true if consumption succeeded.
     public bool TryConsumeDefensiveGauge(float amount)
     {
-        if (amount <= 0f) return true;
+        if (amount <= 0f)
+        {
+            return true;
+        }
+
         if (_defensiveGauge >= amount)
         {
             _defensiveGauge -= amount;
             onDefensiveGaugeChanged?.Invoke(_defensiveGauge);
             return true;
         }
+
         return false;
     }
 
     public float DefensiveGaugeNormalized => DefensiveGaugeMax > 0f ? (_defensiveGauge / DefensiveGaugeMax) : 0f;
 
-    /// <summary>
-    /// BossMiniGame start: puts player into boss mini-game mode targeting the specified boss.
-    /// </summary>
     public void StartBossMiniGame(BossHealth boss)
     {
-        if (boss == null) return;
+        if (boss == null)
+        {
+            return;
+        }
+
         Debug.Log("Starting Boss MiniGame targeting: " + boss.name);
 
         currentGamePhase = MiniGamePhase.BossMiniGamePhase;
@@ -508,32 +537,26 @@ public class GameManager : MonoBehaviour
 
         _bossInMiniGame = boss;
 
-        // set gaze target to the boss transform so gaze systems point at it
         CurrentGazeTarget = boss.transform;
         currentGazeTargetIndex = -1;
 
         ApplySlowMotion(true, 0.3f);
         SetGazeCanvas(true, MiniGamePhase.BossMiniGamePhase);
 
-        // Start the mini-game logic
         if (BossMiniGame != null)
         {
             var mini = BossMiniGame.GetComponent<BossMiniGame>();
             if (mini != null)
             {
                 mini.SetBossTarget(boss);
-
                 mini.StartMiniGame();
             }
         }
     }
 
-    /// <summary>
-    /// BossMiniGame end: called when mini-game is cleared or failed.
-    /// <summary>
     public void EndBossMiniGame(bool cleared)
     {
-        // If there was no boss tracked (defensive), just exit gaze mode.
+        // If there was no boss tracked (defensive, or some weird state), just exit gaze mode.
         if (_bossInMiniGame == null)
         {
             ExitGazeMode();
@@ -541,12 +564,10 @@ public class GameManager : MonoBehaviour
         }
 
         var boss = _bossInMiniGame;
-        _bossInMiniGame = null; // clear the stored reference immediately so other flows don't confuse it
+        _bossInMiniGame = null;
 
         if (cleared)
         {
-            //Boss mini-game cleared. Finalizing boss (if not already finalized by cutscene)
-
             try
             {
                 if (!boss.IsFinalizedDead)
@@ -565,7 +586,6 @@ public class GameManager : MonoBehaviour
         }
         else
         {
-            //Boss mini-game failed. Recovering boss HP and resuming combat.
             try
             {
                 boss.RecoverFromMiniGame(0.2f);
@@ -576,20 +596,27 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        // Now that the boss is finalized or recovered, hide gaze UI and return to normal gameplay.
         ExitGazeMode();
     }
-
 
     public void ResetBossMiniGameTimer()
     {
         if (currentGamePhase != MiniGamePhase.BossMiniGamePhase)
         {
-            // Only reset if we're actually in the boss mini-game.
             return;
         }
 
         time = BossMiniGameDuration;
         onPhaseTimerChanged?.Invoke(time, BossMiniGameDuration, currentGamePhase);
+    }
+
+    public void LockPhaseTimerForCutscene()
+    {
+        _phaseTimerLockedForCutscene = true;
+    }
+
+    public void UnlockPhaseTimerForCutscene()
+    {
+        _phaseTimerLockedForCutscene = false;
     }
 }

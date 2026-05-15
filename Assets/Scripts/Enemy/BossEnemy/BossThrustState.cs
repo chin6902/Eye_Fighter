@@ -64,6 +64,8 @@ public class BossThrustState : IState
             var attackCollider = ctx.AttackCollider;
             if (attackCollider != null)
             {
+                ctx.AttackCollider.EnableHitboxVisual();
+
                 float startTiming = ctx.ThrustAttackWindowStart;
                 float end = ctx.ThrustAttackWindowEnd; 
                 float windowDuration = Mathf.Max(0f, end - startTiming);

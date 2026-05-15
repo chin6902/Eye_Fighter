@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using static GameManager;
@@ -7,7 +6,7 @@ using static GameManager;
 /// <summary>
 /// BossMiniGame (plays cutscene after final connector cleared)
 /// - Set 'bossTarget' at runtime (GameManager should call SetBossTarget) or assign in inspector.
-/// - Set cutsceneController, sword/magic prefabs in inspector.
+/// - Set cutsceneController in inspector.
 /// - When final connector cleared: plays cutscene, waits for it to finish, then finishes mini-game.
 /// </summary>
 public class BossMiniGame : MonoBehaviour
@@ -41,15 +40,14 @@ public class BossMiniGame : MonoBehaviour
     private void Awake()
     {
         if (pathGenerator == null)
+        {
             Debug.LogError("[BossMiniGame] pathGenerator (StraightPathGenerator) reference is required.");
+        }
 
         if (pathGenerator != null && uiCanvas == null && pathGenerator.canvasRect != null)
+        {
             uiCanvas = pathGenerator.canvasRect.GetComponent<Canvas>();
-    }
-
-    private void OnDisable()
-    {
-        StopMiniGameImmediate();
+        }
     }
 
     /// <summary>
@@ -65,11 +63,13 @@ public class BossMiniGame : MonoBehaviour
     public void StartMiniGame()
     {
         if (isRunning) return;
+
         if (anchorPoints == null || anchorPoints.Count < 2)
         {
             Debug.LogWarning("[BossMiniGame] Need at least 2 anchor points.");
             return;
         }
+
         if (pathGenerator == null || gazePathTracker == null)
         {
             Debug.LogWarning("[BossMiniGame] Missing pathGenerator or gazePathTracker.");
@@ -88,6 +88,7 @@ public class BossMiniGame : MonoBehaviour
     private void SpawnConnectorForCurrentIndex()
     {
         if (!isRunning) return;
+
         if (currentConnectorIndex < 0 || currentConnectorIndex >= anchorPoints.Count - 1)
         {
             Debug.LogWarning("[BossMiniGame] invalid connector index.");
@@ -97,7 +98,10 @@ public class BossMiniGame : MonoBehaviour
         if (uiCanvas == null)
         {
             if (pathGenerator != null && pathGenerator.canvasRect != null)
+            {
                 uiCanvas = pathGenerator.canvasRect.GetComponent<Canvas>();
+            }
+
             if (uiCanvas == null)
             {
                 Debug.LogError("[BossMiniGame] No uiCanvas found. Assign uiCanvas or set pathGenerator.canvasRect.");
@@ -116,8 +120,12 @@ public class BossMiniGame : MonoBehaviour
         // generate the connector
         pathGenerator.ClearExisting();
         pathGenerator.GenerateLine(startCanvas, endCanvas, segmentsPerConnector);
-        pathGenerator.lastGeneratedWasPattern = true;
-        if (pathGenerator.segmentGroups == null) pathGenerator.segmentGroups = new List<List<RectTransform>>();
+
+        // Ensure groups list exists (GenerateLine already sets this but keep it safe)
+        if (pathGenerator.segmentGroups == null)
+        {
+            pathGenerator.segmentGroups = new List<List<RectTransform>>();
+        }
 
         // wire tracker to generator & this owner then start next-frame to avoid race conditions
         gazePathTracker.straightGenerator = pathGenerator;
@@ -144,6 +152,8 @@ public class BossMiniGame : MonoBehaviour
 
         awaitingConnectorClear = false;
 
+        SoundManager.PlaySFX(SoundType.Touch, 0.5f);
+
         // defensive clear
         pathGenerator.ClearExisting();
 
@@ -162,6 +172,9 @@ public class BossMiniGame : MonoBehaviour
 
                 GameManager.Instance?.SetGazeCanvas(false, MiniGamePhase.BossMiniGamePhase);
 
+                // lock phase timer during cutscene
+                GameManager.Instance?.LockPhaseTimerForCutscene();
+
                 // Play cutscene and when finished tell GameManager to end mini-game.
                 cutsceneController.PlayCutsceneForBoss(bossTarget, OnCutsceneComplete);
             }
@@ -175,7 +188,9 @@ public class BossMiniGame : MonoBehaviour
         {
             // reset timer for next connector (GameManager resets boss-mini-game timer)
             if (GameManager.Instance != null)
+            {
                 GameManager.Instance.ResetBossMiniGameTimer();
+            }
 
             // spawn next connector next frame to avoid race with tracker cleanup
             StartCoroutine(SpawnNextConnectorNextFrame());
@@ -196,11 +211,21 @@ public class BossMiniGame : MonoBehaviour
 
     private void FinishAndEndMiniGame()
     {
-        // Now call GameManager to end the boss mini-game.
-        // IMPORTANT: GameManager.EndBossMiniGame should be robust (only call FinalizeDeath if needed).
+        if (pathGenerator != null)
+        {
+            pathGenerator.ClearExisting();
+        }
+
+        if (gazePathTracker != null)
+        {
+            gazePathTracker.StopTracking();
+        }
+
+        // Call GameManager to end the boss mini-game.
         if (GameManager.Instance != null)
         {
             GameManager.Instance.EndBossMiniGame(true);
+            GameManager.Instance.UnlockPhaseTimerForCutscene();
         }
     }
 
@@ -220,13 +245,19 @@ public class BossMiniGame : MonoBehaviour
     private Camera ResolveCameraForCanvas(Canvas canvas)
     {
         if (canvas == null) return uiCamera ?? Camera.main;
-        if (canvas.renderMode == RenderMode.ScreenSpaceOverlay) return null;
+
+        if (canvas.renderMode == RenderMode.ScreenSpaceOverlay)
+        {
+            return null;
+        }
+
         if (canvas.renderMode == RenderMode.ScreenSpaceCamera)
         {
             if (canvas.worldCamera != null) return canvas.worldCamera;
             if (uiCamera != null) return uiCamera;
             return Camera.main;
         }
+
         return uiCamera != null ? uiCamera : Camera.main;
     }
 
@@ -258,14 +289,7 @@ public class BossMiniGame : MonoBehaviour
             (canvas.renderMode == RenderMode.ScreenSpaceOverlay) ? null : cam,
             out localPoint
         );
-        return localPoint;
-    }
 
-    private void Update()
-    {
-        if (Input.GetKeyDown(KeyCode.K))
-        {
-            ConnectorCleared();
-        }
+        return localPoint;
     }
 }

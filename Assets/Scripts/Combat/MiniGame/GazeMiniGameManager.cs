@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// Generates the visual path when gaze-minigame enters. 
@@ -49,6 +49,17 @@ public class GazeMiniGameManager : MonoBehaviour
             return;
         }
 
+        // Allow cycling targets during Element Select Phase
+        if (GameManager.Instance.currentGamePhase == GameManager.MiniGamePhase.ElementSelectPhase)
+        {
+            if (Input.GetKeyDown(KeyCode.Tab))
+            {
+                GameManager.Instance.enemyFinder.RefreshEnemies();
+                GameManager.Instance.CycleGazeTarget();
+            }
+        }
+
+
         // Only generate on entering the Gaze Trace Phase
         if (GameManager.Instance.currentGamePhase == GameManager.MiniGamePhase.GazeTracePhase)
         {
@@ -65,16 +76,15 @@ public class GazeMiniGameManager : MonoBehaviour
             ClearAimedSpot();
         }
 
-        // debug / manual cycling (unchanged)
-        if (Input.GetKeyDown(KeyCode.Tab))
-        {
-            GameManager.Instance.enemyFinder.RefreshEnemies();
-            GameManager.Instance.CycleGazeTarget();
-            TryGenerateCurve();
-        }
+        //if (Input.GetKeyDown(KeyCode.Tab))
+        //{
+        //    GameManager.Instance.enemyFinder.RefreshEnemies();
+        //    GameManager.Instance.CycleGazeTarget();
+        //    TryGenerateCurve();
+        //}
     }
 
-    private void TryGenerateCurve()
+    public void TryGenerateCurve()
     {
         Transform currentEnemy = GameManager.Instance.CurrentGazeTarget;
 
@@ -130,7 +140,7 @@ public class GazeMiniGameManager : MonoBehaviour
         if (pathGenerator != null && canvas != null)
         {
             pathGenerator.GenerateCurveFromWorldObject(currentEnemy, canvas, cam);
-            Debug.Log($"GazeMiniGameManager: Generated CURVE for '{currentEnemy.name}' -> lastGeneratedWasPattern={pathGenerator.lastGeneratedWasPattern}, segments={pathGenerator.segments?.Count ?? 0}");
+            //Debug.Log($"GazeMiniGameManager: Generated CURVE for '{currentEnemy.name}' -> lastGeneratedWasPattern={pathGenerator.lastGeneratedWasPattern}, segments={pathGenerator.segments?.Count ?? 0}");
         }
         else
         {

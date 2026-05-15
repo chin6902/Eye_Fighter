@@ -141,6 +141,8 @@ public class BarrierController : MonoBehaviour
 
         if (BarrierVisual != null) BarrierVisual.SetActive(false);
 
+        SoundManager.PlaySFX(SoundType.Break, 0.5f);
+
         // Force-hide magic for all spots before deactivating them
         foreach (var s in Spots)
         {

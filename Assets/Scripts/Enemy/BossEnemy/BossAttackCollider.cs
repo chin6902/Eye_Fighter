@@ -4,6 +4,9 @@ using UnityEngine;
 [RequireComponent(typeof(Collider))]
 public class BossAttackCollider : MonoBehaviour
 {
+    [Tooltip("Hitbox Visual")]
+    [SerializeField] private GameObject hitboxVisual;
+
     [Tooltip("Damage dealt by this attack")]
     public int damage = 20;
 
@@ -16,9 +19,19 @@ public class BossAttackCollider : MonoBehaviour
         _collider.isTrigger = true;
         _collider.enabled = false;
         _canDamage = false;
+        hitboxVisual.SetActive(false);
     }
 
-    // Public API ----------------------------------------------------------
+    public void EnableHitboxVisual()
+    {
+        hitboxVisual.SetActive(true);
+    }
+
+    public void DisableHitboxVisual()
+    {
+        hitboxVisual.SetActive(false);
+    }
+
     public void EnableDamage()
     {
         _canDamage = true;
@@ -50,13 +63,10 @@ public class BossAttackCollider : MonoBehaviour
             yield return new WaitForSeconds(windowDuration);
 
         DisableDamage();
+        DisableHitboxVisual();
     }
 
-    // Methods you can call directly from an animation event
-    public void AttackHitStart() => EnableDamage();
-    public void AttackHitEnd() => DisableDamage();
-
-    // Collision handling -------------------------------------------------
+    // Collision handling
     private void OnTriggerEnter(Collider other)
     {
         if (!_canDamage) return;

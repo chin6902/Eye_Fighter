@@ -230,14 +230,16 @@ public class BossHealth : MonoBehaviour
         DealDamage(maxHP);
     }
 
-    private void Update()
-    {
-        // Debug key
-        if (Input.GetKeyDown(KeyCode.L))
-        {
-            BossDamageDebugger();
-        }
-    }
+    
+    //private void Update()
+    //{
+    //    // Debug key
+    //    if (Input.GetKeyDown(KeyCode.L))
+    //    {
+    //        BossDamageDebugger();
+    //    }
+    //}
+    
 }
 
 

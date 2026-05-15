@@ -51,13 +51,15 @@ MonoBehaviour:
   - {fileID: 8300000, guid: f4ff7ddd94c23684cb4dadeade11a8bc, type: 3}
   - {fileID: 8300000, guid: b5fdb1e2291cf24468d35a629775eeaa, type: 3}
   - {fileID: 8300000, guid: 19a65dbe7f50e3742a30c4e60ad1315f, type: 3}
+  - {fileID: 8300000, guid: a0bdd9b6d499ae645a84909dbd705d8f, type: 3}
+  - {fileID: 8300000, guid: 370875e81f6cae24aaa95c656edb3459, type: 3}
   minPitch: 0.9
   maxPitch: 1.1
   bgmClips:
   - {fileID: 8300000, guid: a651205205cf87945a73d738e014631f, type: 3}
-  - {fileID: 8300000, guid: fd0bef4aba8a42d41a0b754b2e4c0cbe, type: 3}
+  - {fileID: 8300000, guid: b2483709fb8d5684eab7bf4f662aeb1a, type: 3}
   playBgmOnAwake: 1
-  bgmVolume: 0.03
+  bgmVolume: 0.1
   defaultBgmIndex: 0
   dontDestroyOnLoad: 1
 --- !u!82 &6852095479975029705

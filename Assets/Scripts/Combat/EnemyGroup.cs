@@ -161,6 +161,8 @@ public class EnemyGroup : MonoBehaviour
             yield break;
         }
 
+        // inside EnqueueOne -> OnSpawned callback, add the spawner.RegisterEnemyDied in OnMemberDie:
+
         Action<GameObject> onSpawned = (go) =>
         {
             if (go == null) return;
@@ -174,23 +176,22 @@ public class EnemyGroup : MonoBehaviour
                 var h = go.GetComponent<Health>();
                 if (h != null)
                 {
-                    // local function so we can safely check `this` when the event fires
                     void OnMemberDie()
                     {
-                        // UnityEngine.Object overloaded operator: this == null is true if the group has been destroyed
                         if (this == null) return;
-
-                        // double-guard: if gameObject is missing, don't call StartCoroutine
                         if (gameObject == null) return;
 
-                        // defensive try/catch: if somehow destroyed between the checks, ignore exception
                         try
                         {
+                            if (spawner != null)
+                            {
+                                spawner.RegisterEnemyDied();
+                            }
+
                             StartCoroutine(RemoveMemberDelayed(ctrl));
                         }
                         catch (MissingReferenceException)
                         {
-                            // group destroyed; nothing to do
                         }
                     }
 
@@ -203,6 +204,7 @@ public class EnemyGroup : MonoBehaviour
                 try { Destroy(go); } catch { }
             }
         };
+
 
 
         // Attempt to call the spawner's EnqueueSpawn method.
@@ -270,33 +272,58 @@ public class EnemyGroup : MonoBehaviour
     // public cleanup that spawner can call to get the proper detach + notify behavior
     public void ForceDestroyGroup()
     {
-        // destroy remaining members and notify spawner via NotifyAndDestroy
-        foreach (var m in members)
+        foreach (EnemyController m in members)
         {
-            if (m != null) Destroy(m.gameObject);
+            if (m != null)
+            {
+                if (spawner != null)
+                {
+                    spawner.RegisterEnemyDied();
+                }
+                Destroy(m.gameObject);
+            }
         }
         members.Clear();
 
         NotifyAndDestroy();
     }
 
+
     // optional public helper in case external code wants to force group cleanup immediately
     public void ForceDestroyGroupImmediate()
     {
-        // detach restricted area then immediate destroy without waiting a frame
         if (restrictedArea != null)
         {
             try
             {
                 if (restrictedArea.transform.IsChildOf(transform))
+                {
                     restrictedArea.transform.SetParent(null, true);
+                }
             }
-            catch { }
+            catch
+            {
+            }
         }
 
-        if (spawner != null) spawner.NotifyGroupDestroyed(this);
+        if (spawner != null)
+        {
+            foreach (EnemyController m in members)
+            {
+                if (m != null)
+                {
+                    spawner.RegisterEnemyDied();
+                    Destroy(m.gameObject);
+                }
+            }
+            members.Clear();
+
+            spawner.NotifyGroupDestroyed(this);
+        }
+
         Destroy(gameObject);
     }
+
 
     void OnDrawGizmosSelected()
     {

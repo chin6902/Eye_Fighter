@@ -159,7 +159,7 @@ public class BarrierSpot : MonoBehaviour
             // broken: spawn break effects and notify controller
             GenerateBreakEffect(attackerElement);
             var data = ElementDatabase.Instance.Get(attackerElement);
-            /* Edit later for barrier spot SFX
+            /* 
             if (data != null && data.HitSFX != null)
                 SoundManager.PlaySFX(data.HitSFX, 0.5f);
             */

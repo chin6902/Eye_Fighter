@@ -1006,10 +1006,10 @@ RectTransform:
   - {fileID: 1272914902461231301}
   m_Father: {fileID: 5577641061893750809}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 1920, y: 1080}
+  m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &2659250700179405414
 MonoBehaviour:
@@ -1469,7 +1469,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   dotRect: {fileID: 9167433004938045463}
   canvas: {fileID: 1168818424799005064}
-  smoothingSpeed: 6
+  smoothingSpeed: 7
   buffer: {x: 0, y: 0}
 --- !u!1 &6185948787799540694
 GameObject:
@@ -1608,6 +1608,7 @@ GameObject:
   - component: {fileID: 1143411100077426658}
   - component: {fileID: 3434472292395658119}
   - component: {fileID: 1377349927321999430}
+  - component: {fileID: 7154070165314464678}
   m_Layer: 5
   m_Name: Phase2
   m_TagString: Untagged
@@ -1647,6 +1648,36 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3b59712cafc10144684b3851a26d8ba7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  curveHeightFactor: 0.5
+  minArcHeight: 50
+  maxArcHeight: 400
+  scaleSegmentsByDistance: 1
+  segmentMinSize: 20
+  segmentMaxSize: 45
+  sizeDistanceCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
   canvasRect: {fileID: 7148639441803025259}
   segmentPrefab: {fileID: 4769840208113880114, guid: c0442e1b36a4ee348a80615696df60ab, type: 3}
   endpointPrefab: {fileID: 4278018010464309242, guid: 99600be53d96465458ac7763f075d9f8, type: 3}
@@ -1654,7 +1685,8 @@ MonoBehaviour:
   segmentCount: 40
   minDistance: 10
   maxAttempts: 20
-  defaultPatternLength: 120
+  defaultPatternLength: 80
+  segmentPool: {fileID: 7154070165314464678}
   segments: []
   endPointRect: {fileID: 0}
   startPointRect: {fileID: 0}
@@ -1690,6 +1722,30 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   gazeDot: {fileID: 1146829148071609818}
   pathGenerator: {fileID: 1143411100077426658}
+  lineClearClip: {fileID: 8300000, guid: 8742067e1f2200c4081b5fce944fa553, type: 3}
+  lineBasePitch: 0
+  linePitchStep: 0.02
+  lineMaxPitch: 2
+  lineSfxVolume: 0.1
+  finalSegmentClip: {fileID: 8300000, guid: a0bdd9b6d499ae645a84909dbd705d8f, type: 3}
+  finalSegmentPitch: 1.25
+  finalSegmentVolume: 0.5
+  trackingPaused: 0
+--- !u!114 &7154070165314464678
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6265839373901877120}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fa22dc2e5cf6e4d4d84f439cb2369340, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::UIPool
+  prefab: {fileID: 4769840208113880114, guid: c0442e1b36a4ee348a80615696df60ab, type: 3}
+  parent: {fileID: 5577641061893750809}
+  maxPoolSize: 256
 --- !u!1 &6382536209041470128
 GameObject:
   m_ObjectHideFlags: 0
@@ -2090,6 +2146,7 @@ GameObject:
   - component: {fileID: 2453849682389567698}
   - component: {fileID: 5602136382203337982}
   - component: {fileID: 9037651220311469570}
+  - component: {fileID: 5418341259643522960}
   m_Layer: 5
   m_Name: BossMiniGame
   m_TagString: Untagged
@@ -2112,10 +2169,10 @@ RectTransform:
   - {fileID: 4907791684804740530}
   m_Father: {fileID: 5577641061893750809}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 1920, y: 1080}
+  m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &4141136681531386626
 MonoBehaviour:
@@ -2154,8 +2211,6 @@ MonoBehaviour:
   pathGenerator: {fileID: 5602136382203337982}
   gazePathTracker: {fileID: 9037651220311469570}
   cutsceneController: {fileID: 0}
-  swordPrefab: {fileID: 6479634474328233706, guid: 2c7d2c94fc62bee4e95904659c2cef4c, type: 3}
-  magicCirclePrefab: {fileID: 5333934147955514887, guid: 8148226672643654f9aa678a716ff0ac, type: 3}
   uiCamera: {fileID: 0}
   uiCanvas: {fileID: 3781693953228808312}
   segmentsPerConnector: 10
@@ -2176,11 +2231,8 @@ MonoBehaviour:
   segmentPrefab: {fileID: 4769840208113880114, guid: c0442e1b36a4ee348a80615696df60ab, type: 3}
   endpointPrefab: {fileID: 4278018010464309242, guid: 99600be53d96465458ac7763f075d9f8, type: 3}
   startPointPrefab: {fileID: 949821904526631966, guid: 426fed3d4babb1b4ca4de596af1ad901, type: 3}
-  defaultSegmentCount: 5
+  segmentPool: {fileID: 5418341259643522960}
   segments: []
-  endPointRect: {fileID: 0}
-  startPointRect: {fileID: 0}
-  lastGeneratedWasPattern: 0
   startPointRects: []
   endPointRects: []
 --- !u!114 &9037651220311469570
@@ -2198,3 +2250,24 @@ MonoBehaviour:
   straightGenerator: {fileID: 5602136382203337982}
   gazeDot: {fileID: 1146829148071609818}
   owner: {fileID: 2453849682389567698}
+  lineClearClip: {fileID: 8300000, guid: 8742067e1f2200c4081b5fce944fa553, type: 3}
+  lineBasePitch: 0
+  linePitchStep: 0.2
+  lineMaxPitch: 2
+  lineSfxVolume: 0.5
+  trackingPaused: 0
+--- !u!114 &5418341259643522960
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9007368853601018315}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fa22dc2e5cf6e4d4d84f439cb2369340, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::UIPool
+  prefab: {fileID: 4769840208113880114, guid: c0442e1b36a4ee348a80615696df60ab, type: 3}
+  parent: {fileID: 5577641061893750809}
+  maxPoolSize: 256

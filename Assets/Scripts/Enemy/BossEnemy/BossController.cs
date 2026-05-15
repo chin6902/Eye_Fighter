@@ -25,7 +25,7 @@ public class BossController : MonoBehaviour
     [Tooltip("Animation damage window start time (seconds after animation starts)")]
     public float ThrustAttackWindowStart = 0.2f;
     [Tooltip("Animation damage window end time (seconds after animation starts)")]
-    public float ThrustAttackWindowEnd = 1.0f;
+    public float ThrustAttackWindowEnd = 0.8f;
 
     [Header("Movement / Ranges")]
     public float WalkSpeed = 2.5f;
@@ -357,6 +357,7 @@ public class BossController : MonoBehaviour
         // intentionally DO NOT reset recoverAccumulator here so barrier attempts still happen on fixed interval.
     }
 
+    /*
     // --- Gizmos ---
     private void OnDrawGizmosSelected()
     {
@@ -385,6 +386,7 @@ public class BossController : MonoBehaviour
             Gizmos.DrawLine(transform.position, spawnPos);
         }
     }
+    */
 
     private void OnValidate()
     {

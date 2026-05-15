@@ -17,6 +17,17 @@ public class GetEnemy : MonoBehaviour
     public float DetectionAngle = 150f;
     public float DetectionDistance = 25f;
 
+    [Header("Visualization")]
+    [Tooltip("LineRenderer that draws the detection cone in-game.")]
+    public LineRenderer detectionConeRenderer;
+
+    [Tooltip("Number of segments used to approximate the arc.")]
+    public int visualizationSegments = 30;
+
+    [Tooltip("Whether to show the detection cone in-game.")]
+    public bool showDetectionCone = true;
+
+
     [Header("Path generator (optional)")]
     [Tooltip("If assigned, used to draw curve for normal enemies and pattern for BarrierSpot targets.")]
     public CurvedPathGenerator pathGenerator;
@@ -70,14 +81,18 @@ public class GetEnemy : MonoBehaviour
                 _currentSpot = null;
             }
 
+            /*
             // clear previous line/pattern
             if (pathGenerator != null)
             {
                 pathGenerator.ClearExisting();
             }
+            */
 
             _currentTarget = newTarget;
         }
+
+        UpdateDetectionConeVisualization();
     }
 
     public void RefreshEnemies()
@@ -104,6 +119,59 @@ public class GetEnemy : MonoBehaviour
     {
         Enemies.Remove(enemyTransform);
     }
+
+    private void UpdateDetectionConeVisualization()
+    {
+        if (!showDetectionCone || detectionConeRenderer == null || PlayerTransform == null)
+        {
+            if (detectionConeRenderer != null)
+            {
+                detectionConeRenderer.positionCount = 0;
+            }
+            return;
+        }
+
+        int segments = Mathf.Max(3, visualizationSegments);
+
+        Vector3 origin = PlayerTransform.position;
+
+        Quaternion leftRayRotation = Quaternion.AngleAxis(-DetectionAngle * 0.5f, Vector3.up);
+        Quaternion rightRayRotation = Quaternion.AngleAxis(DetectionAngle * 0.5f, Vector3.up);
+
+        Vector3 leftRayDirection = leftRayRotation * PlayerTransform.forward;
+
+        // We draw:
+        // 0: origin
+        // 1: left edge
+        // 2..(segments+1): arc points (last one is right edge)
+        // (segments+2): origin again (close the shape)
+        int totalPoints = segments + 3;
+        detectionConeRenderer.positionCount = totalPoints;
+
+        int index = 0;
+
+        // 0: origin (player position)
+        detectionConeRenderer.SetPosition(index++, origin);
+
+        // 1: left edge end
+        detectionConeRenderer.SetPosition(index++, origin + leftRayDirection * DetectionDistance);
+
+        // arc from left to right (last point becomes the right edge)
+        for (int i = 1; i <= segments; i++)
+        {
+            float lerp = i / (float)segments; // 0..1
+            Quaternion rotation = Quaternion.Slerp(leftRayRotation, rightRayRotation, lerp);
+            Vector3 dir = rotation * PlayerTransform.forward;
+            Vector3 point = origin + dir * DetectionDistance;
+
+            detectionConeRenderer.SetPosition(index++, point);
+        }
+
+        // close back to origin
+        detectionConeRenderer.SetPosition(index, origin);
+    }
+
+
 
     private void OnDrawGizmosSelected()
     {

@@ -1,13 +1,19 @@
 ﻿using System.Collections;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class BossHealthBarUI : MonoBehaviour
 {
     [Header("References")]
-    [SerializeField] private EnemySpawner spawner;        
-    [SerializeField] private Image barImage;              
-    [SerializeField] private GameObject bossHPBarVisual;  
+    [SerializeField] private EnemySpawner spawner;
+    [SerializeField] private Image barImage;
+    [SerializeField] private GameObject bossHPBarVisual;
+
+    [Header("Countdown UI (new)")]
+    [Tooltip("Root GameObject of the countdown UI. Starts inactive and will be enabled during countdown.")]
+    [SerializeField] private GameObject countdownUI;
+    [SerializeField] private TextMeshProUGUI countdownTextOverride;
 
     [Header("Smoothing")]
     [Tooltip("Fill speed in fill-units per second (higher = faster).")]
@@ -18,10 +24,22 @@ public class BossHealthBarUI : MonoBehaviour
     private float currentFill = 1f;
     private Coroutine fillCoroutine;
 
+    private TextMeshProUGUI countdownText;
+    private Coroutine countdownCoroutine;
+
     private void Awake()
     {
         if (bossHPBarVisual != null)
+        {
             bossHPBarVisual.SetActive(false);
+        }
+
+        if (countdownUI != null)
+        {
+            countdownUI.SetActive(false);
+
+            countdownText = countdownTextOverride;
+        }
     }
 
     private void Start()
@@ -33,12 +51,20 @@ public class BossHealthBarUI : MonoBehaviour
         }
 
         spawner.OnBossSpawned += OnBossSpawned;
+
+        // subscribe to new countdown / cutscene events
+        spawner.OnBossCountdownStarted += HandleBossCountdownStarted;
+        spawner.OnCutsceneStarted += HandleCutsceneStarted;
     }
 
     private void OnDestroy()
     {
         if (spawner != null)
+        {
             spawner.OnBossSpawned -= OnBossSpawned;
+            spawner.OnBossCountdownStarted -= HandleBossCountdownStarted;
+            spawner.OnCutsceneStarted -= HandleCutsceneStarted;
+        }
 
         UnsubscribeFromBoss();
     }
@@ -66,7 +92,9 @@ public class BossHealthBarUI : MonoBehaviour
         // Set initial fill instantly to current HP fraction (no visible pop)
         currentFill = targetFill = GetFillFromBoss();
         if (barImage != null)
+        {
             barImage.fillAmount = currentFill;
+        }
 
         // Subscribe to events
         bossHealth.OnTakeDamage += BossHealth_OnTakeDamage;
@@ -74,7 +102,9 @@ public class BossHealthBarUI : MonoBehaviour
         bossHealth.OnRecoveredFromMiniGame += BossHealth_OnRecoveredFromMiniGame;
 
         if (bossHPBarVisual != null)
+        {
             bossHPBarVisual.SetActive(true);
+        }
     }
 
     private void UnsubscribeFromBoss()
@@ -113,7 +143,9 @@ public class BossHealthBarUI : MonoBehaviour
         UnsubscribeFromBoss();
 
         if (bossHPBarVisual != null)
+        {
             bossHPBarVisual.SetActive(false);
+        }
     }
 
     private void StartFillTo(float newTarget)
@@ -149,7 +181,6 @@ public class BossHealthBarUI : MonoBehaviour
 
         while (t < duration)
         {
-            // use unscaled time so this animates correctly regardless of Time.timeScale
             t += Time.unscaledDeltaTime;
             float alpha = Mathf.Clamp01(t / duration);
             currentFill = Mathf.Lerp(from, to, alpha);
@@ -160,5 +191,62 @@ public class BossHealthBarUI : MonoBehaviour
         currentFill = to;
         if (barImage != null) barImage.fillAmount = currentFill;
         fillCoroutine = null;
+    }
+
+    // --- countdown handlers ---
+
+    private void HandleBossCountdownStarted(float duration)
+    {
+        // start or restart countdown display
+        if (countdownCoroutine != null)
+        {
+            StopCoroutine(countdownCoroutine);
+        }
+        countdownCoroutine = StartCoroutine(CountdownCoroutine(duration));
+    }
+
+    private void HandleCutsceneStarted()
+    {
+        // ensure countdown hidden when cutscene begins
+        if (countdownCoroutine != null)
+        {
+            StopCoroutine(countdownCoroutine);
+            countdownCoroutine = null;
+        }
+
+        if (countdownUI != null)
+        {
+            countdownUI.SetActive(false);
+        }
+    }
+
+    private IEnumerator CountdownCoroutine(float duration)
+    {
+        if (countdownUI == null)
+            yield break;
+
+        float remaining = duration;
+        countdownUI.SetActive(true);
+
+        // initial text update
+        UpdateCountdownText(remaining);
+
+        while (remaining > 0f)
+        {
+            yield return null;
+            remaining -= Time.deltaTime;
+            UpdateCountdownText(remaining);
+        }
+
+        countdownUI.SetActive(false);
+        countdownCoroutine = null;
+    }
+
+    private void UpdateCountdownText(float remaining)
+    {
+        if (countdownText == null) return;
+
+        int seconds = Mathf.CeilToInt(Mathf.Max(0f, remaining));
+        countdownText.text = seconds.ToString();
     }
 }

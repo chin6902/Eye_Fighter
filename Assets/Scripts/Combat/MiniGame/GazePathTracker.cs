@@ -5,11 +5,30 @@ public class GazePathTracker : MonoBehaviour
 {
     public static GazePathTracker Instance;
 
-    public GazeDot gazeDot;                
+    public GazeDot gazeDot;
     public CurvedPathGenerator pathGenerator;
+
+    [Header("Line SFX (per-line pitch ramp)")]
+    public AudioClip lineClearClip;           // inspector: normal per-segment sound
+    [Tooltip("Base pitch for the first cleared segment (usually 1.0)")]
+    public float lineBasePitch = 1.0f;
+    [Tooltip("Pitch step added for each subsequent cleared segment")]
+    public float linePitchStep = 0.05f;
+    [Tooltip("Maximum allowed pitch")]
+    public float lineMaxPitch = 2.0f;
+    [Range(0f, 1f)]
+    public float lineSfxVolume = 0.8f;
+
+    [Header("Final SFX (play on endpoint touch)")]
+    public AudioClip finalSegmentClip;        // inspector: special sound played when endpoint is touched
+    [Tooltip("Pitch used for finalSegmentClip (if used)")]
+    public float finalSegmentPitch = 1.25f;
+    [Range(0f, 1f)]
+    public float finalSegmentVolume = 1f;
 
     // runtime
     private bool tracking = false;
+    public bool trackingPaused = false;
 
     // normal-curve mode
     private bool curveStarted = false;
@@ -17,19 +36,22 @@ public class GazePathTracker : MonoBehaviour
     private int curveTotalCount = 0;
 
     // pattern-mode (barrier) state
-    private List<bool> groupStarted;   
+    private List<bool> groupStarted;
     private int patternHitCount = 0;
     private int patternTotalCount = 0;
+
+    // per-group cleared counts (for pitch ramp per-line)
+    private List<int> groupClearCounts;
+
+    // キャッシュして GC を減らす（ロジックには影響なし）
+    private readonly Vector3[] _cachedCornersDot = new Vector3[4];
+    private readonly Vector3[] _cachedCornersA = new Vector3[4];
 
     private void Awake()
     {
         if (Instance == null) Instance = this;
     }
 
-    /// <summary>
-    /// Called by game code to begin tracking the currently generated path.
-    /// The tracker inspects pathGenerator.lastGeneratedWasPattern to decide behaviour.
-    /// </summary>
     public void StartTracking()
     {
         if (pathGenerator == null)
@@ -50,20 +72,23 @@ public class GazePathTracker : MonoBehaviour
             int groupCount = (pathGenerator.segmentGroups != null) ? pathGenerator.segmentGroups.Count : 0;
             groupStarted = new List<bool>(groupCount);
 
-            patternHitCount = 0;
+            // initialize per-group clear counters
+            groupClearCounts = new List<int>(groupCount);
             patternTotalCount = 0;
-
             for (int g = 0; g < groupCount; g++)
             {
                 groupStarted.Add(false);
+                groupClearCounts.Add(0);
 
                 var grp = pathGenerator.segmentGroups[g];
                 if (grp != null) patternTotalCount += grp.Count;
             }
+
+            patternHitCount = 0;
         }
         else
         {
-            // Curve mode (original behaviour)
+            // Curve mode 
             curveStarted = false;
             curveHitCount = 0;
             curveTotalCount = (pathGenerator.segments != null) ? pathGenerator.segments.Count : 0;
@@ -72,23 +97,25 @@ public class GazePathTracker : MonoBehaviour
             groupStarted = null;
             patternHitCount = 0;
             patternTotalCount = 0;
+            groupClearCounts = null;
         }
     }
 
     private void Update()
     {
         if (!tracking || pathGenerator == null || gazeDot == null) return;
+        if (trackingPaused) return;
 
         RectTransform dotRect = gazeDot.dotRect;
         if (dotRect == null) return;
 
-        Vector3[] dotWorldCorners = new Vector3[4];
-        dotRect.GetWorldCorners(dotWorldCorners);
-        Rect dotScreenRect = new Rect(dotWorldCorners[0], dotWorldCorners[2] - dotWorldCorners[0]);
+        dotRect.GetWorldCorners(_cachedCornersDot);
+        Rect dotScreenRect = new Rect(_cachedCornersDot[0], _cachedCornersDot[2] - _cachedCornersDot[0]);
 
         if (!pathGenerator.lastGeneratedWasPattern)
         {
-            // ---------- Curve mode (original behaviour) ----------
+            // ---------- Curve mode ----------
+
             if (!curveStarted)
             {
                 RectTransform startRect = null;
@@ -99,14 +126,14 @@ public class GazePathTracker : MonoBehaviour
 
                 if (startRect != null)
                 {
-                    Vector3[] startCorners = new Vector3[4];
-                    startRect.GetWorldCorners(startCorners);
-                    Rect startScreenRect = new Rect(startCorners[0], startCorners[2] - startCorners[0]);
+                    startRect.GetWorldCorners(_cachedCornersA);
+                    Rect startScreenRect = new Rect(_cachedCornersA[0], _cachedCornersA[2] - _cachedCornersA[0]);
 
                     if (dotScreenRect.Overlaps(startScreenRect))
                     {
                         curveStarted = true;
-                        Destroy(startRect.gameObject);
+                        Destroy(startRect.gameObject); // start marker はプールしない
+
                         if (pathGenerator.startPointRect == startRect) pathGenerator.startPointRect = null;
                         if (pathGenerator.startPointRects != null && pathGenerator.startPointRects.Count > 0)
                             pathGenerator.startPointRects[0] = null;
@@ -119,7 +146,7 @@ public class GazePathTracker : MonoBehaviour
                 return; // waiting for start touch
             }
 
-            // After start touched: clear *any* segment the dot overlaps (original behavior).
+            // After start touched: clear *any* segment the dot overlaps
             if (pathGenerator.segments != null)
             {
                 for (int i = pathGenerator.segments.Count - 1; i >= 0; i--)
@@ -127,30 +154,57 @@ public class GazePathTracker : MonoBehaviour
                     var seg = pathGenerator.segments[i];
                     if (seg == null) continue;
 
-                    Vector3[] segCorners = new Vector3[4];
-                    seg.GetWorldCorners(segCorners);
-                    Rect segRect = new Rect(segCorners[0], segCorners[2] - segCorners[0]);
+                    seg.GetWorldCorners(_cachedCornersA);
+                    Rect segRect = new Rect(_cachedCornersA[0], _cachedCornersA[2] - _cachedCornersA[0]);
 
                     if (dotScreenRect.Overlaps(segRect))
                     {
+                        // clear
                         curveHitCount++;
-                        Destroy(seg.gameObject);
+
+                        // remove from list
                         pathGenerator.segments.RemoveAt(i);
+
+                        // 中間セグメントならプールに返す (エンドポイントなら Destroy)
+                        pathGenerator.ReleaseOrDestroySegment(seg.gameObject);
+
+                        // compute pitch for normal ramp (based on hits so far)
+                        float pitch = lineBasePitch + linePitchStep * (curveHitCount - 1);
+                        pitch = Mathf.Min(pitch, lineMaxPitch);
+
+                        if (lineClearClip != null)
+                        {
+                            SoundManager.PlaySFXWithPitch(lineClearClip, pitch, lineSfxVolume);
+                        }
+                        else
+                        {
+                            SoundManager.PlaySFX(SoundType.Touch, lineSfxVolume);
+                        }
+
                         break; // remove only one segment per frame
                     }
                 }
             }
 
-            // check endpoint overlap to complete
+            // check endpoint overlap to complete -> play final clip here (on endpoint touch)
             RectTransform endRect = pathGenerator.endPointRect;
             if (endRect != null)
             {
-                Vector3[] endCorners = new Vector3[4];
-                endRect.GetWorldCorners(endCorners);
-                Rect endRectScreen = new Rect(endCorners[0], endCorners[2] - endCorners[0]);
+                endRect.GetWorldCorners(_cachedCornersA);
+                Rect endRectScreen = new Rect(_cachedCornersA[0], _cachedCornersA[2] - _cachedCornersA[0]);
 
                 if (dotScreenRect.Overlaps(endRectScreen))
                 {
+                    // play final clip on endpoint touch
+                    if (finalSegmentClip != null)
+                    {
+                        SoundManager.PlaySFXWithPitch(finalSegmentClip, finalSegmentPitch, finalSegmentVolume);
+                    }
+                    else
+                    {
+                        SoundManager.PlaySFX(SoundType.Touch, finalSegmentVolume);
+                    }
+
                     float accuracy = (curveTotalCount == 0) ? 1f : ((float)curveHitCount / curveTotalCount);
                     tracking = false;
                     FinishAndCleanup(accuracy);
@@ -174,16 +228,20 @@ public class GazePathTracker : MonoBehaviour
 
                 if (startRect == null) continue;
 
-                Vector3[] startCorners = new Vector3[4];
-                startRect.GetWorldCorners(startCorners);
-                Rect startScreenRect = new Rect(startCorners[0], startCorners[2] - startCorners[0]);
+                startRect.GetWorldCorners(_cachedCornersA);
+                Rect startScreenRect = new Rect(_cachedCornersA[0], _cachedCornersA[2] - _cachedCornersA[0]);
 
                 if (dotScreenRect.Overlaps(startScreenRect))
                 {
                     groupStarted[g] = true;
-                    Destroy(startRect.gameObject);
+                    Destroy(startRect.gameObject); // start marker は Destroy
+
                     pathGenerator.startPointRects[g] = null;
-                    //Debug.Log($"GazePathTracker: Group {g} started.");
+
+                    // reset per-group clear counter when group activated
+                    if (groupClearCounts != null && g < groupClearCounts.Count)
+                        groupClearCounts[g] = 0;
+
                     // do not clear segments this frame (user must touch start first)
                 }
             }
@@ -201,9 +259,8 @@ public class GazePathTracker : MonoBehaviour
                 RectTransform nextSeg = group[0];
                 if (nextSeg == null) continue;
 
-                Vector3[] segCorners = new Vector3[4];
-                nextSeg.GetWorldCorners(segCorners);
-                Rect segScreenRect = new Rect(segCorners[0], segCorners[2] - segCorners[0]);
+                nextSeg.GetWorldCorners(_cachedCornersA);
+                Rect segScreenRect = new Rect(_cachedCornersA[0], _cachedCornersA[2] - _cachedCornersA[0]);
 
                 if (dotScreenRect.Overlaps(segScreenRect))
                 {
@@ -217,23 +274,48 @@ public class GazePathTracker : MonoBehaviour
                         {
                             if (pathGenerator.segments[s] == nextSeg)
                             {
-                                // remove reference but DO NOT destroy here (we will destroy below)
                                 pathGenerator.segments.RemoveAt(s);
                                 break;
                             }
                         }
                     }
 
-                    // Destroy the GameObject for nextSeg (if still exists)
-                    if (nextSeg != null && nextSeg.gameObject != null)
+                    // 中間セグメントならプールに返す (エンドポイントなら Destroy)
+                    pathGenerator.ReleaseOrDestroySegment(nextSeg.gameObject);
+
+                    // update per-group clear counter and compute pitch for normal ramp
+                    if (groupClearCounts != null && g < groupClearCounts.Count)
                     {
-                        Destroy(nextSeg.gameObject);
+                        groupClearCounts[g]++; // 1-based cleared count for that group
+                        int cleared = groupClearCounts[g];
+                        float pitch = lineBasePitch + linePitchStep * (cleared - 1);
+                        pitch = Mathf.Min(pitch, lineMaxPitch);
+
+                        if (lineClearClip != null)
+                        {
+                            SoundManager.PlaySFXWithPitch(lineClearClip, pitch, lineSfxVolume);
+                        }
+                        else
+                        {
+                            SoundManager.PlaySFX(SoundType.Touch, lineSfxVolume);
+                        }
+                    }
+                    else
+                    {
+                        if (lineClearClip != null)
+                        {
+                            SoundManager.PlaySFXWithPitch(lineClearClip, lineBasePitch, lineSfxVolume);
+                        }
+                        else
+                        {
+                            SoundManager.PlaySFX(SoundType.Touch, lineSfxVolume);
+                        }
                     }
 
                     // remove from the group's list (this enforces sequential clearing)
                     group.RemoveAt(0);
 
-                    // only clear one segment per frame per group, but continue loop to allow other groups to also clear one each frame
+                    // only clear one segment per frame per group
                 }
             }
 
@@ -243,7 +325,11 @@ public class GazePathTracker : MonoBehaviour
             {
                 foreach (var g in pathGenerator.segmentGroups)
                 {
-                    if (g != null && g.Count > 0) { allGroupsEmpty = false; break; }
+                    if (g != null && g.Count > 0)
+                    {
+                        allGroupsEmpty = false;
+                        break;
+                    }
                 }
             }
 
@@ -255,29 +341,32 @@ public class GazePathTracker : MonoBehaviour
                     var endRect = pathGenerator.endPointRects[e];
                     if (endRect == null) continue;
 
-                    Vector3[] endCorners = new Vector3[4];
-                    endRect.GetWorldCorners(endCorners);
-                    Rect endScreenRect = new Rect(endCorners[0], endCorners[2] - endCorners[0]);
+                    endRect.GetWorldCorners(_cachedCornersA);
+                    Rect endRectScreen = new Rect(_cachedCornersA[0], _cachedCornersA[2] - _cachedCornersA[0]);
 
-                    if (dotScreenRect.Overlaps(endScreenRect))
+                    if (dotScreenRect.Overlaps(endRectScreen))
                     {
                         if (allGroupsEmpty)
                         {
+                            if (finalSegmentClip != null)
+                            {
+                                SoundManager.PlaySFXWithPitch(finalSegmentClip, finalSegmentPitch, finalSegmentVolume);
+                            }
+                            else
+                            {
+                                SoundManager.PlaySFX(SoundType.Touch, finalSegmentVolume);
+                            }
+
                             float accuracy = (patternTotalCount == 0) ? 1f : ((float)patternHitCount / patternTotalCount);
                             tracking = false;
-                            //Debug.Log($"GazePathTracker: Endpoint {e} touched and all groups empty -> finishing. accuracy={accuracy}");
                             FinishAndCleanup(accuracy);
                             return;
-                        }
-                        else
-                        {
-                            //Debug.Log($"GazePathTracker: Endpoint {e} touched but not all groups empty yet -> ignoring (remaining groups).");
                         }
                     }
                 }
             }
 
-            // 3) check completion: all groups empty (this would handle case where last segment removed and no endpoint is required to be touched)
+            // 3) check completion: all groups empty (no endpoint touch)
             if (allGroupsEmpty)
             {
                 float accuracy = (patternTotalCount == 0) ? 1f : ((float)patternHitCount / patternTotalCount);
@@ -287,9 +376,6 @@ public class GazePathTracker : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Stop tracking and destroy generated UI. Report attack accuracy and exit gaze mode.
-    /// </summary>
     private void FinishAndCleanup(float accuracy)
     {
         // ensure we remove any remaining UI created by the pathGenerator
@@ -302,67 +388,14 @@ public class GazePathTracker : MonoBehaviour
         GameManager.Instance.ExitGazeMode();
     }
 
-    /// <summary>
-    /// Reset / destroy generated path UI without triggering onAttack.
-    /// </summary>
     public void Reset()
     {
         tracking = false;
 
         if (pathGenerator != null)
         {
-            // destroy group's segments
-            if (pathGenerator.segmentGroups != null)
-            {
-                foreach (var g in pathGenerator.segmentGroups)
-                {
-                    if (g == null) continue;
-                    for (int i = g.Count - 1; i >= 0; i--)
-                        if (g[i] != null)
-                            Destroy(g[i].gameObject);
-                    g.Clear();
-                }
-                pathGenerator.segmentGroups.Clear();
-            }
-
-            // destroy flat segments
-            if (pathGenerator.segments != null)
-            {
-                for (int i = pathGenerator.segments.Count - 1; i >= 0; i--)
-                    if (pathGenerator.segments[i] != null)
-                        Destroy(pathGenerator.segments[i].gameObject);
-                pathGenerator.segments.Clear();
-            }
-
-            // destroy end points
-            if (pathGenerator.endPointRects != null)
-            {
-                for (int i = pathGenerator.endPointRects.Count - 1; i >= 0; i--)
-                    if (pathGenerator.endPointRects[i] != null)
-                        Destroy(pathGenerator.endPointRects[i].gameObject);
-                pathGenerator.endPointRects.Clear();
-            }
-
-            if (pathGenerator.endPointRect != null)
-            {
-                Destroy(pathGenerator.endPointRect.gameObject);
-                pathGenerator.endPointRect = null;
-            }
-
-            // destroy start markers
-            if (pathGenerator.startPointRects != null)
-            {
-                for (int i = pathGenerator.startPointRects.Count - 1; i >= 0; i--)
-                    if (pathGenerator.startPointRects[i] != null)
-                        Destroy(pathGenerator.startPointRects[i].gameObject);
-                pathGenerator.startPointRects.Clear();
-            }
-
-            if (pathGenerator.startPointRect != null)
-            {
-                Destroy(pathGenerator.startPointRect.gameObject);
-                pathGenerator.startPointRect = null;
-            }
+            // 片付けはジェネレーター側の ClearExisting に任せる
+            pathGenerator.ClearExisting();
 
             // reset generator state
             pathGenerator.segmentGroups = new List<List<RectTransform>>();
@@ -377,6 +410,7 @@ public class GazePathTracker : MonoBehaviour
         curveHitCount = 0;
         curveTotalCount = 0;
         groupStarted = null;
+        groupClearCounts = null;
         patternHitCount = 0;
         patternTotalCount = 0;
     }

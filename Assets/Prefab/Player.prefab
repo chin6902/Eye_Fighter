@@ -51,6 +51,10 @@ MonoBehaviour:
   Character: {fileID: 879246667787122202}
   enemyFinder: {fileID: 5133845766772602659}
   CameraVirtSensitivity: 50
+  defaultxViewportPos: 0.5
+  defaultyViewportPos: 0.65
+  bossxViewportPos: 0.5
+  bossyViewportPos: 0.35
 --- !u!1 &1157922923783703306
 GameObject:
   m_ObjectHideFlags: 0

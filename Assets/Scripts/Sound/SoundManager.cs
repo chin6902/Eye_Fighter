@@ -8,6 +8,8 @@ public enum SoundType
     PlayerHit,
     Jump,
     Clear,
+    Touch,
+    Break,
 }
 
 [RequireComponent(typeof(AudioSource))]
@@ -33,7 +35,7 @@ public class SoundManager : MonoBehaviour
     [Tooltip("If true, SoundManager will survive scene loads")]
     [SerializeField] private bool dontDestroyOnLoad = true;
 
-    private static SoundManager instance;
+    private static SoundManager Instance;
 
     // Two audio sources to allow smooth crossfade
     private AudioSource bgmSourceA;
@@ -51,11 +53,11 @@ public class SoundManager : MonoBehaviour
     private void Awake()
     {
         // Singleton setup - destroy duplicates
-        if (instance == null)
+        if (Instance == null)
         {
-            instance = this;
+            Instance = this;
         }
-        else if (instance != this)
+        else if (Instance != this)
         {
             Destroy(gameObject);
             return;
@@ -102,32 +104,32 @@ public class SoundManager : MonoBehaviour
     /// <summary>Play one of the enum-based clips with randomized pitch.</summary>
     public static void PlaySound(SoundType sound, float volume = 1f)
     {
-        if (instance == null)
+        if (Instance == null)
         {
             return;
         }
 
         int idx = (int)sound;
-        if (instance.soundList == null)
+        if (Instance.soundList == null)
         {
             Debug.LogWarning("SoundManager: soundList is null.");
             return;
         }
 
-        if (idx < 0 || idx >= instance.soundList.Length)
+        if (idx < 0 || idx >= Instance.soundList.Length)
         {
             Debug.LogWarning($"SoundManager: SoundType index {idx} out of range.");
             return;
         }
 
-        AudioClip clip = instance.soundList[idx];
+        AudioClip clip = Instance.soundList[idx];
         if (clip == null)
         {
             Debug.LogWarning($"SoundManager: soundList[{idx}] is null.");
             return;
         }
 
-        instance.PlayOneShotWithRandomPitch(clip, volume);
+        Instance.PlayOneShotWithRandomPitch(clip, volume);
     }
 
     /// <summary>Backwards-compatible wrapper so PlaySFX(SoundType, volume) works.</summary>
@@ -139,12 +141,12 @@ public class SoundManager : MonoBehaviour
     /// <summary>Play arbitrary AudioClip as SFX with randomized pitch.</summary>
     public static void PlaySFX(AudioClip clip, float volume = 1f)
     {
-        if (instance == null || clip == null)
+        if (Instance == null || clip == null)
         {
             return;
         }
 
-        instance.PlayOneShotWithRandomPitch(clip, volume);
+        Instance.PlayOneShotWithRandomPitch(clip, volume);
     }
 
     private void PlayOneShotWithRandomPitch(AudioClip clip, float volume)
@@ -183,32 +185,32 @@ public class SoundManager : MonoBehaviour
     /// <summary>Crossfade to the BGM at the given index.</summary>
     public static void CrossfadeToBGMIndex(int idx, float duration)
     {
-        if (instance == null)
+        if (Instance == null)
         {
             return;
         }
 
-        AudioClip clip = instance.GetBgmClipByIndex(idx);
-        instance.StartCrossfade(clip, duration);
+        AudioClip clip = Instance.GetBgmClipByIndex(idx);
+        Instance.StartCrossfade(clip, duration);
     }
 
     /// <summary>Play the BGM at index immediately or crossfade if fadeTime &gt; 0.</summary>
     public static void PlayBGMIndex(int idx, float fadeTime = 0f)
     {
-        if (instance == null)
+        if (Instance == null)
         {
             return;
         }
 
-        AudioClip clip = instance.GetBgmClipByIndex(idx);
+        AudioClip clip = Instance.GetBgmClipByIndex(idx);
         if (fadeTime <= 0f)
         {
-            instance.StopActiveBGMImmediate();
+            Instance.StopActiveBGMImmediate();
             if (clip != null)
             {
-                instance.activeBgm.clip = clip;
-                instance.activeBgm.volume = instance.bgmVolume;
-                instance.activeBgm.Play();
+                Instance.activeBgm.clip = clip;
+                Instance.activeBgm.volume = Instance.bgmVolume;
+                Instance.activeBgm.Play();
             }
         }
         else
@@ -224,30 +226,30 @@ public class SoundManager : MonoBehaviour
     /// <summary>Crossfade to newClip over duration. If newClip is null, fade out current BGM.</summary>
     public static void CrossfadeToBGM(AudioClip newClip, float duration)
     {
-        if (instance == null)
+        if (Instance == null)
         {
             return;
         }
 
-        instance.StartCrossfade(newClip, duration);
+        Instance.StartCrossfade(newClip, duration);
     }
 
     /// <summary>Immediately play a BGM clip (no crossfade). Optional fadeTime to crossfade from current BGM.</summary>
     public static void PlayBGM(AudioClip clip, float fadeTime = 0f)
     {
-        if (instance == null)
+        if (Instance == null)
         {
             return;
         }
 
         if (fadeTime <= 0f)
         {
-            instance.StopActiveBGMImmediate();
+            Instance.StopActiveBGMImmediate();
             if (clip != null)
             {
-                instance.activeBgm.clip = clip;
-                instance.activeBgm.volume = instance.bgmVolume;
-                instance.activeBgm.Play();
+                Instance.activeBgm.clip = clip;
+                Instance.activeBgm.volume = Instance.bgmVolume;
+                Instance.activeBgm.Play();
             }
         }
         else
@@ -259,14 +261,14 @@ public class SoundManager : MonoBehaviour
     /// <summary>Fade out and stop BGM over duration.</summary>
     public static void StopBGM(float fadeTime = 0f)
     {
-        if (instance == null)
+        if (Instance == null)
         {
             return;
         }
 
         if (fadeTime <= 0f)
         {
-            instance.StopActiveBGMImmediate();
+            Instance.StopActiveBGMImmediate();
         }
         else
         {
@@ -277,15 +279,15 @@ public class SoundManager : MonoBehaviour
     /// <summary>Change BGM master volume (0–1). This affects target volume for crossfades.</summary>
     public static void SetBGMVolume(float volume)
     {
-        if (instance == null)
+        if (Instance == null)
         {
             return;
         }
 
-        instance.bgmVolume = Mathf.Clamp01(volume);
-        if (instance.activeBgm != null && instance.activeBgm.isPlaying)
+        Instance.bgmVolume = Mathf.Clamp01(volume);
+        if (Instance.activeBgm != null && Instance.activeBgm.isPlaying)
         {
-            instance.activeBgm.volume = instance.bgmVolume;
+            Instance.activeBgm.volume = Instance.bgmVolume;
         }
     }
 
@@ -424,11 +426,27 @@ public class SoundManager : MonoBehaviour
 
     public static void PlayDefaultBGM(float fadeTime = 0f)
     {
-        if (instance == null) return;
+        if (Instance == null) return;
         // Get the clip stored at the serialized defaultBgmIndex and play it (uses existing PlayBGM implementation).
-        AudioClip clip = instance.GetBgmClipByIndex(instance.defaultBgmIndex);
+        AudioClip clip = Instance.GetBgmClipByIndex(Instance.defaultBgmIndex);
         PlayBGM(clip, fadeTime);
     }
 
     #endregion
+
+    public static void PlaySFXWithPitch(AudioClip clip, float pitch, float volume = 1f)
+    {
+        if (Instance == null || clip == null) return;
+        Instance.PlayOneShotWithPitch(clip, pitch, volume);
+    }
+
+    private void PlayOneShotWithPitch(AudioClip clip, float pitch, float volume)
+    {
+        if (sfxSource == null || clip == null) return;
+
+        float originalPitch = sfxSource.pitch;
+        sfxSource.pitch = pitch;
+        sfxSource.PlayOneShot(clip, volume);
+        sfxSource.pitch = originalPitch;
+    }
 }

@@ -28,6 +28,10 @@ public class EnemyManager : MonoBehaviour
         new AttackSlotConfig() { type = EnemyType.Mushroom, maxAttackers = 1, slotCooldown = 4f }
     };
 
+    [Header("Slot hold timeout")]
+    [Tooltip("How long (seconds) an enemy may hold a granted attack slot before manager forcibly frees it.")]
+    public float MaxAttackSlotHoldDuration = 15f;
+
     // Internal lookups created from configs for fast access
     private readonly Dictionary<EnemyType, int> _maxAttackersByType = new();
     private readonly Dictionary<EnemyType, float> _slotCooldownByType = new();
@@ -41,6 +45,12 @@ public class EnemyManager : MonoBehaviour
     // Last grant time per type
     private readonly Dictionary<EnemyType, float> _lastGrantTimeByType = new();
 
+    // Grant time per enemy (when manager granted the slot)
+    private readonly Dictionary<EnemyController, float> _grantTimeByEnemy = new();
+
+    // All known types (for Update loop, avoids per-frame allocations)
+    private readonly List<EnemyType> _allTypes = new();
+
     private void Awake()
     {
         if (Instance != null && Instance != this)
@@ -51,107 +61,129 @@ public class EnemyManager : MonoBehaviour
 
         Instance = this;
 
-        // initialize dictionaries
         _maxAttackersByType.Clear();
         _slotCooldownByType.Clear();
         _activeAttackersByType.Clear();
         _waitingQueuesByType.Clear();
         _lastGrantTimeByType.Clear();
+        _grantTimeByEnemy.Clear();
+        _allTypes.Clear();
 
         // Populate from inspector configs
-        foreach (var c in configs)
+        foreach (AttackSlotConfig c in configs)
         {
-            if (!_maxAttackersByType.ContainsKey(c.type))
+            EnsureTypeExists(c.type);
+
+            _maxAttackersByType[c.type] = Math.Max(0, c.maxAttackers);
+            _slotCooldownByType[c.type] = Mathf.Max(0f, c.slotCooldown);
+
+            if (!_allTypes.Contains(c.type))
             {
-                _maxAttackersByType[c.type] = Math.Max(0, c.maxAttackers);
-                _slotCooldownByType[c.type] = Mathf.Max(0f, c.slotCooldown);
-                _activeAttackersByType[c.type] = new List<EnemyController>();
-                _waitingQueuesByType[c.type] = new Queue<EnemyController>();
-                _lastGrantTimeByType[c.type] = -Mathf.Infinity;
+                _allTypes.Add(c.type);
             }
         }
     }
 
     private void Update()
     {
-        // For every known type (either configured or discovered), try to grant slots
-        // We iterate over keys present in either _maxAttackersByType or any active/waiting collections.
-        var typesToProcess = new HashSet<EnemyType>();
-        foreach (var k in _maxAttackersByType.Keys) typesToProcess.Add(k);
-        foreach (var kv in _activeAttackersByType) typesToProcess.Add(kv.Key);
-        foreach (var kv in _waitingQueuesByType) typesToProcess.Add(kv.Key);
-
-        foreach (var type in typesToProcess)
+        for (int i = 0; i < _allTypes.Count; i++)
         {
-            // Ensure structures exist for discovered types
-            EnsureTypeExists(type);
+            EnemyType type = _allTypes[i];
+            ProcessType(type);
+        }
+    }
 
-            // Clean active attackers list (remove nulls / dead)
-            var activeList = _activeAttackersByType[type];
-            for (int i = activeList.Count - 1; i >= 0; --i)
+    private void ProcessType(EnemyType type)
+    {
+        EnsureTypeExists(type);
+
+        List<EnemyController> activeList = _activeAttackersByType[type];
+
+        // Clean active attackers list (remove nulls / dead) and grant-time entries
+        for (int i = activeList.Count - 1; i >= 0; --i)
+        {
+            EnemyController e = activeList[i];
+            if (e == null || e.IsDead)
             {
-                var e = activeList[i];
-                if (e == null || e.IsDead)
+                activeList.RemoveAt(i);
+                if (e != null)
                 {
-                    activeList.RemoveAt(i);
+                    _grantTimeByEnemy.Remove(e);
                 }
             }
+        }
 
-            // Clean waiting queue by removing null or dead entries but keep others in order
-            var q = _waitingQueuesByType[type];
-            if (q.Count > 0)
+        // Enforce max-hold duration: forcibly free any active that exceeded MaxAttackSlotHoldDuration
+        if (MaxAttackSlotHoldDuration > 0f && activeList.Count > 0)
+        {
+            var copy = new List<EnemyController>(activeList);
+            foreach (EnemyController e in copy)
             {
-                var tmp = new Queue<EnemyController>();
-                while (q.Count > 0)
+                if (e == null) continue;
+                if (!_grantTimeByEnemy.TryGetValue(e, out float grantTime)) continue;
+
+                if (Time.time - grantTime >= MaxAttackSlotHoldDuration)
                 {
-                    var e = q.Dequeue();
-                    if (e == null || e.IsDead) continue; // remove invalid
-                    tmp.Enqueue(e); // keep all others — even if currently out of range
+                    activeList.Remove(e);
+                    _grantTimeByEnemy.Remove(e);
+
+                    _lastGrantTimeByType[type] = Time.time;
+
+                    TryNotifyAttackSlotRevoked(e);
                 }
-                _waitingQueuesByType[type] = tmp;
-                q = _waitingQueuesByType[type];
+            }
+        }
+
+        // Clean waiting queue by removing null or dead entries but keep others in order
+        Queue<EnemyController> q = _waitingQueuesByType[type];
+        if (q.Count > 0)
+        {
+            Queue<EnemyController> tmp = new Queue<EnemyController>();
+            while (q.Count > 0)
+            {
+                EnemyController e = q.Dequeue();
+                if (e == null || e.IsDead) continue;
+                tmp.Enqueue(e);
+            }
+            _waitingQueuesByType[type] = tmp;
+            q = _waitingQueuesByType[type];
+        }
+
+        // Try to grant slots while there are waiting enemies and slots available and cooldown ready
+        int maxForType = _maxAttackersByType[type];
+        float cooldownForType = _slotCooldownByType[type];
+        float lastGrant = _lastGrantTimeByType[type];
+        Queue<EnemyController> queueForType = _waitingQueuesByType[type];
+
+        while (queueForType.Count > 0 && _activeAttackersByType[type].Count < maxForType)
+        {
+            if (Time.time - lastGrant < cooldownForType)
+            {
+                break;
             }
 
-
-            // Try to grant slots while there are waiting enemies and slots available and cooldown ready
-            int maxForType = _maxAttackersByType[type];
-            float cooldownForType = _slotCooldownByType[type];
-            float lastGrant = _lastGrantTimeByType[type];
-            var queueForType = _waitingQueuesByType[type];
-
-            while (queueForType.Count > 0 && _activeAttackersByType[type].Count < maxForType)
+            EnemyController next = queueForType.Peek();
+            if (next == null || next.IsDead)
             {
-                // respect cooldown between grants for this type
-                if (Time.time - lastGrant < cooldownForType)
-                    break;
-
-                var next = queueForType.Peek(); // do not dequeue yet
-                if (next == null || next.IsDead)
-                {
-                    queueForType.Dequeue(); // remove and continue
-                    continue;
-                }
-
-                // Only grant if the enemy is currently eligible (in-range)
-                float dist = Vector3.Distance(next.transform.position, next.Player.position);
-                if (dist > next.ChaseRange)
-                {
-                    // enemy temporarily out of range — move it to end of queue to be retried later (keeps fairness)
-                    queueForType.Dequeue();
-                    queueForType.Enqueue(next);
-                    // avoid spinning: break to allow other types/next frame to progress, or consume one slot of time
-                    break;
-                }
-
-                // It's eligible — grant
                 queueForType.Dequeue();
-                _activeAttackersByType[type].Add(next);
-                _lastGrantTimeByType[type] = Time.time;
-                lastGrant = Time.time;
-
-                next.OnAttackGranted();
+                continue;
             }
 
+            float dist = Vector3.Distance(next.transform.position, next.Player.position);
+            if (dist > next.ChaseRange)
+            {
+                queueForType.Dequeue();
+                queueForType.Enqueue(next);
+                break;
+            }
+
+            queueForType.Dequeue();
+            _activeAttackersByType[type].Add(next);
+            _lastGrantTimeByType[type] = Time.time;
+            _grantTimeByEnemy[next] = Time.time;
+            lastGrant = Time.time;
+
+            next.OnAttackGranted();
         }
     }
 
@@ -166,32 +198,35 @@ public class EnemyManager : MonoBehaviour
         EnemyType t = e.Type;
         EnsureTypeExists(t);
 
-        var activeList = _activeAttackersByType[t];
+        List<EnemyController> activeList = _activeAttackersByType[t];
 
         // Already active
         if (activeList.Contains(e))
+        {
             return true;
+        }
 
         int maxForType = _maxAttackersByType[t];
         float cooldownForType = _slotCooldownByType[t];
         float lastGrant = _lastGrantTimeByType[t];
-        var queueForType = _waitingQueuesByType[t];
+        Queue<EnemyController> queueForType = _waitingQueuesByType[t];
 
         bool slotAvailable = activeList.Count < maxForType;
         bool cooldownReady = (Time.time - lastGrant) >= cooldownForType;
 
-        // If there's an available slot and cooldown is ready and no one is waiting BEFORE this requester, grant immediately
         if (slotAvailable && cooldownReady && queueForType.Count == 0)
         {
             activeList.Add(e);
             _lastGrantTimeByType[t] = Time.time;
+            _grantTimeByEnemy[e] = Time.time;
             e.OnAttackGranted();
             return true;
         }
 
-        // Otherwise enqueue if not already in queue
         if (!QueueContains(queueForType, e))
+        {
             queueForType.Enqueue(e);
+        }
 
         return false;
     }
@@ -205,9 +240,16 @@ public class EnemyManager : MonoBehaviour
         EnemyType t = e.Type;
         EnsureTypeExists(t);
 
-        var activeList = _activeAttackersByType[t];
+        List<EnemyController> activeList = _activeAttackersByType[t];
         if (activeList.Contains(e))
+        {
             activeList.Remove(e);
+        }
+
+        if (_grantTimeByEnemy.ContainsKey(e))
+        {
+            _grantTimeByEnemy.Remove(e);
+        }
     }
 
     // ---------- Utility / runtime API ----------
@@ -221,38 +263,59 @@ public class EnemyManager : MonoBehaviour
         }
 
         if (!_activeAttackersByType.ContainsKey(t))
+        {
             _activeAttackersByType[t] = new List<EnemyController>();
+        }
 
         if (!_waitingQueuesByType.ContainsKey(t))
+        {
             _waitingQueuesByType[t] = new Queue<EnemyController>();
+        }
 
         if (!_lastGrantTimeByType.ContainsKey(t))
+        {
             _lastGrantTimeByType[t] = -Mathf.Infinity;
+        }
+
+        if (!_allTypes.Contains(t))
+        {
+            _allTypes.Add(t);
+        }
     }
 
     private static bool QueueContains(Queue<EnemyController> q, EnemyController e)
     {
         if (q == null || e == null) return false;
-        foreach (var item in q)
+        foreach (EnemyController item in q)
+        {
             if (item == e) return true;
+        }
         return false;
     }
 
-    /// <summary>
-    /// Runtime setter to change max attackers for a type.
-    /// </summary>
     public void SetMaxAttackersForType(EnemyType type, int max)
     {
         if (max < 0) max = 0;
         _maxAttackersByType[type] = max;
     }
 
-    /// <summary>
-    /// Runtime setter to change slot cooldown for a type.
-    /// </summary>
     public void SetSlotCooldownForType(EnemyType type, float cooldown)
     {
         if (cooldown < 0f) cooldown = 0f;
         _slotCooldownByType[type] = cooldown;
+    }
+
+    private void TryNotifyAttackSlotRevoked(EnemyController e)
+    {
+        if (e == null) return;
+
+        try
+        {
+            e.OnAttackSlotRevoked();
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("[EnemyManager] Failed to call OnAttackSlotRevoked on enemy: " + ex);
+        }
     }
 }

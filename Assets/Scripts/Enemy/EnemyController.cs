@@ -229,6 +229,59 @@ public class EnemyController : MonoBehaviour
         return dist > RestrictedArea.GetComponent<RestrictedAreaController>().areaRadius;
     }
 
+    public void OnAttackSlotRevoked()
+    {
+       // Debug.Log($"[EnemyController] Attack slot revoked for {name}");
+
+        // Stop any active attack coroutine
+        if (currentAttackCoroutine != null)
+        {
+            try
+            {
+                StopCoroutine(currentAttackCoroutine);
+            }
+            catch { }
+            currentAttackCoroutine = null;
+        }
+
+        // Disable attack hitbox if present
+        var attackCol = GetComponentInChildren<EnemyAttackCollider>(true);
+        if (attackCol != null)
+        {
+            var col = attackCol.GetComponent<Collider>();
+            if (col != null) col.enabled = false;
+        }
+
+        // Clear attackable / parryable state
+        IsParryable = false;
+
+        // Clear the granted slot flag and start cooldown so it won't spam requests
+        attackSlotGranted = false;
+        _attackCooldownTimer = AttackCooldown;
+
+        try
+        {
+            // If the enemy is too far from its group center, return; else idle/circulate
+            if (CurrentGroup != null)
+            {
+                Vector3 flatCenter = RestrictedArea.position;
+                flatCenter.y = transform.position.y;
+                float dist = Vector3.Distance(transform.position, flatCenter);
+                float limit = RestrictedArea.GetComponent<RestrictedAreaController>().areaRadius * 1.5f;
+                if (dist > limit)
+                {
+                    ChangeState(new ReturnToGroupState(this));
+                    return;
+                }
+            }
+        }
+        catch { /* defensive: fallthrough to idle if something goes wrong */ }
+
+        // Default fallback state
+        ChangeState(new IdleState(this));
+    }
+
+
     void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.yellow;

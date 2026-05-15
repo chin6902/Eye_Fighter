@@ -13,6 +13,8 @@ public class GameFlowManager : MonoBehaviour
 
     [Header("References")]
     [SerializeField] private Health playerHealth;
+    [SerializeField] private BossStraightGazeTracker bossStraightGazeTracker;
+    [SerializeField] private GazePathTracker gazePathTracker;
 
     [Header("Pause Menu UI")]
     [SerializeField] private GameObject pauseMenuPanel;
@@ -220,6 +222,7 @@ public class GameFlowManager : MonoBehaviour
         // clear paused / ended flags
         isPaused = false;
         gameEnded = false;
+        playerHealth.invincible = false;
 
         // ensure time scale is normal (important if Pause set timeScale = 0)
         Time.timeScale = 1f;
@@ -411,6 +414,16 @@ public class GameFlowManager : MonoBehaviour
 
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
+
+        //Pause Tracking
+        if(GameManager.Instance != null && GameManager.Instance.IsGazeModeActive())
+        {
+            gazePathTracker.trackingPaused = true;
+        }
+        if(GameManager.Instance != null && GameManager.Instance.currentGamePhase == GameManager.MiniGamePhase.BossMiniGamePhase)
+        {
+            bossStraightGazeTracker.trackingPaused = true;
+        }
     }
 
     private void ResumeGame()
@@ -433,6 +446,16 @@ public class GameFlowManager : MonoBehaviour
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
+
+        //Resume Tracking
+        if (GameManager.Instance != null && GameManager.Instance.IsGazeModeActive())
+        {
+            gazePathTracker.trackingPaused = false;
+        }
+        if (GameManager.Instance != null && GameManager.Instance.currentGamePhase == GameManager.MiniGamePhase.BossMiniGamePhase)
+        {
+            bossStraightGazeTracker.trackingPaused = false;
+        }
     }
 
     private void EndGame(string message)
@@ -440,6 +463,8 @@ public class GameFlowManager : MonoBehaviour
         gameEnded = true;
         Time.timeScale = 0f;
         if (GameManager.Instance != null) GameManager.Instance.isPaused = true;
+
+        playerHealth.invincible = true;
 
         if (endGameTitleText != null) endGameTitleText.text = message;
         if (endGamePanel != null) endGamePanel.SetActive(true);

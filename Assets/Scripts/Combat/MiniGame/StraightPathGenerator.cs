@@ -2,185 +2,186 @@
 using UnityEngine;
 
 /// <summary>
-/// StraightPathGenerator (pattern-friendly)
-/// - Produces straight-line segmented UI between two canvas-local positions.
-/// - Ensures segmentGroups are ordered start -> ... -> endpoint so sequential clearing works.
-/// - Keeps the same public fields used by GazePathTracker.
+/// Generates a straight line of UI segments between two canvas positions.
+/// Used by the Boss mini-game to spawn the "connector" line.
+///
+/// Middle segments use a UIPool (segmentPool) if assigned.
+/// Start marker and endpoint marker are always instantiated / destroyed normally.
 /// </summary>
+[AddComponentMenu("BossMiniGame/StraightPathGenerator")]
 public class StraightPathGenerator : MonoBehaviour
 {
     [Header("References")]
     public RectTransform canvasRect;
-    public GameObject segmentPrefab;
-    public GameObject endpointPrefab;
-    public GameObject startPointPrefab;
+    public GameObject segmentPrefab;     // middle pieces
+    public GameObject endpointPrefab;    // last piece (visually end of connector)
+    public GameObject startPointPrefab;  // separate green "START" marker
 
-    [Header("Defaults")]
-    [Tooltip("Default number of segments created for a line")]
-    public int defaultSegmentCount = 8;
+    [Header("Optional pool (boss mini-game segments only)")]
+    [Tooltip("Pool used ONLY for boss mini-game middle segments.")]
+    public UIPool segmentPool;
 
     [HideInInspector] public List<RectTransform> segments;
-    [HideInInspector] public RectTransform endPointRect;
-    [HideInInspector] public RectTransform startPointRect;
-
-    [HideInInspector] public bool lastGeneratedWasPattern = false;
-
     [HideInInspector] public List<List<RectTransform>> segmentGroups = new List<List<RectTransform>>();
     [HideInInspector] public List<RectTransform> startPointRects = new List<RectTransform>();
     [HideInInspector] public List<RectTransform> endPointRects = new List<RectTransform>();
 
+    // Track which instances actually came from the pool so we don't accidentally
+    // pool endpoints or non-pooled objects.
+    private readonly HashSet<GameObject> _pooledSegmentInstances = new HashSet<GameObject>();
+
     /// <summary>
-    /// Generate a straight segmented line between start and end in canvas-local coordinates.
-    /// segCount includes the endpoint; minimum 2.
-    /// Ensures the group's element order is front-to-back: group[0] is the first segment the player must clear.
+    /// Generate a straight connector from start to end with the given segment count.
+    /// segmentsPerConnector includes the endpoint segment.
     /// </summary>
-    public void GenerateLine(Vector2 start, Vector2 end, int segCount)
+    public void GenerateLine(Vector2 start, Vector2 end, int segmentsPerConnector)
     {
-        if (segCount < 2) segCount = Mathf.Max(2, defaultSegmentCount);
+        ClearExisting();
+
         if (canvasRect == null)
         {
-            Debug.LogWarning("[StraightPathGenerator] canvasRect is null. Cannot generate segments.");
+            Debug.LogWarning("[StraightPathGenerator] canvasRect is not assigned.");
             return;
         }
 
-        // Clear previous data
-        ClearExisting();
+        if (segmentsPerConnector < 2)
+        {
+            // At least one middle + one endpoint
+            segmentsPerConnector = 2;
+        }
 
         segments = new List<RectTransform>();
         segmentGroups = new List<List<RectTransform>>();
         startPointRects = new List<RectTransform>();
         endPointRects = new List<RectTransform>();
+        _pooledSegmentInstances.Clear();
 
-        // We want positions from start -> end (inclusive) and then create group entries
-        List<Vector2> positions = new List<Vector2>(segCount);
-        for (int i = 1; i <= segCount; i++)
+        List<RectTransform> group = new List<RectTransform>();
+        segmentGroups.Add(group);
+
+        for (int i = 0; i < segmentsPerConnector; i++)
         {
-            float t = i / (float)segCount;
+            float t = (float)i / (segmentsPerConnector - 1);
             Vector2 pos = Vector2.Lerp(start, end, t);
-            positions.Add(pos);
-        }
 
-        // Instantiate UI elements in the same order as positions so group[0] = nearest to start
-        List<RectTransform> thisGroup = new List<RectTransform>();
+            bool isEndpoint = (i == segmentsPerConnector - 1);
+            GameObject prefab = isEndpoint ? endpointPrefab : segmentPrefab;
 
-        for (int i = 0; i < positions.Count; i++)
-        {
-            GameObject prefab = (i == positions.Count - 1) ? endpointPrefab : segmentPrefab;
             if (prefab == null)
             {
-                Debug.LogWarning("[StraightPathGenerator] segment or endpoint prefab is not assigned.");
+                Debug.LogWarning("[StraightPathGenerator] Missing prefab for segment generation.");
                 continue;
             }
 
-            GameObject segObj = Instantiate(prefab, canvasRect);
-            segObj.name = $"SP_Segment_{i}"; // helpful for debugging in hierarchy
-            RectTransform rt = segObj.GetComponent<RectTransform>();
-            rt.anchoredPosition = positions[i];
+            GameObject segObj;
 
-            // ensure the segment renders above existing canvas content (keep UI visible)
-            segObj.transform.SetAsLastSibling();
-
-            // Add to flat list and to group in the same forward order
-            segments.Add(rt);
-            thisGroup.Add(rt);
-
-            if (i == positions.Count - 1)
+            // Middle segments -> pool; endpoint -> always Instantiate
+            if (!isEndpoint && segmentPool != null && segmentPool.prefab != null)
             {
-                endPointRect = rt;
+                segObj = segmentPool.Get(canvasRect);
+                _pooledSegmentInstances.Add(segObj);
+            }
+            else
+            {
+                segObj = Instantiate(prefab, canvasRect, false);
+            }
+
+            RectTransform rt = segObj.GetComponent<RectTransform>();
+            if (rt == null)
+            {
+                Debug.LogWarning("[StraightPathGenerator] Segment object has no RectTransform.");
+                continue;
+            }
+
+            rt.anchoredPosition = pos;
+
+            segments.Add(rt);
+            group.Add(rt);
+
+            if (isEndpoint)
+            {
                 endPointRects.Add(rt);
             }
         }
 
-
-        // The first element of the group should be the one the player clears first (closest to start).
-        // We already added in start->end order so group[0] is correct.
-        segmentGroups.Add(thisGroup);
-
-        // create a start marker (optional) — keep single reference for legacy systems
+        // Separate START marker at the start position (not pooled)
         if (startPointPrefab != null)
         {
-            GameObject startObj = Instantiate(startPointPrefab, canvasRect);
-            RectTransform rtStart = startObj.GetComponent<RectTransform>();
-            rtStart.anchoredPosition = start;
-            startPointRects.Add(rtStart);
-            startPointRect = rtStart;
-            startObj.transform.SetAsLastSibling();
+            GameObject startObj = Instantiate(startPointPrefab, canvasRect, false);
+            RectTransform startRt = startObj.GetComponent<RectTransform>();
+            if (startRt != null)
+            {
+                startRt.anchoredPosition = start;
+                startRt.transform.SetAsLastSibling();
+                startPointRects.Add(startRt);
+            }
         }
-
-        // mark pattern-mode true so GazePathTracker will use sequential clearing
-        lastGeneratedWasPattern = true;
     }
 
     /// <summary>
-    /// Clears/destroys any UI created by this generator and resets state.
+    /// Clears all currently generated UI (segments + markers).
+    /// Middle segments are released to the pool when possible.
     /// </summary>
     public void ClearExisting()
     {
+        // segments
         if (segments != null)
         {
             for (int i = segments.Count - 1; i >= 0; i--)
             {
-                if (segments[i] != null)
-                    Destroy(segments[i].gameObject);
+                RectTransform seg = segments[i];
+                if (seg != null)
+                {
+                    ReleaseOrDestroySegment(seg.gameObject);
+                }
             }
             segments.Clear();
-            segments = null;
         }
 
+        // groups
         if (segmentGroups != null)
         {
-            foreach (var g in segmentGroups)
-            {
-                if (g == null) continue;
-                for (int i = g.Count - 1; i >= 0; i--)
-                {
-                    if (g[i] != null)
-                        Destroy(g[i].gameObject);
-                }
-                g.Clear();
-            }
             segmentGroups.Clear();
         }
 
-        if (endPointRects != null)
-        {
-            for (int i = endPointRects.Count - 1; i >= 0; i--)
-            {
-                if (endPointRects[i] != null)
-                    Destroy(endPointRects[i].gameObject);
-            }
-            endPointRects.Clear();
-        }
-
-        if (endPointRect != null)
-        {
-            Destroy(endPointRect.gameObject);
-            endPointRect = null;
-        }
-
+        // start markers (never pooled)
         if (startPointRects != null)
         {
-            for (int i = startPointRects.Count - 1; i >= 0; i--)
+            foreach (RectTransform rt in startPointRects)
             {
-                if (startPointRects[i] != null)
-                    Destroy(startPointRects[i].gameObject);
+                if (rt != null)
+                {
+                    Destroy(rt.gameObject);
+                }
             }
             startPointRects.Clear();
         }
 
-        if (startPointRect != null)
+        // endpoints are just references; they were already destroyed or pooled
+        if (endPointRects != null)
         {
-            Destroy(startPointRect.gameObject);
-            startPointRect = null;
+            endPointRects.Clear();
         }
 
-        lastGeneratedWasPattern = false;
+        _pooledSegmentInstances.Clear();
     }
 
-#if UNITY_EDITOR
-    private void OnValidate()
+    /// <summary>
+    /// Used by the tracker and by ClearExisting:
+    /// middle segments go back to pool, everything else gets Destroy().
+    /// </summary>
+    public void ReleaseOrDestroySegment(GameObject go)
     {
-        defaultSegmentCount = Mathf.Max(2, defaultSegmentCount);
+        if (go == null) return;
+
+        if (segmentPool != null && segmentPool.prefab != null && _pooledSegmentInstances.Contains(go))
+        {
+            _pooledSegmentInstances.Remove(go);
+            segmentPool.Release(go); // pooled middle segment
+        }
+        else
+        {
+            Destroy(go); // endpoints or anything not from the pool
+        }
     }
-#endif
 }
