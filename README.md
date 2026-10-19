@@ -2,7 +2,7 @@
 
 # 視線ファイター（Eye Fighter）
 
-<img src="docs/images/title.jpg" alt="視線ファイター タイトル画面" width="720">
+<img src="docs/images/result.jpg" alt="視線ファイター タイトル画面" width="720">
 
 **視線入力でQTEを行う3Dアクションゲーム**
 
@@ -51,7 +51,7 @@ Webカメラによるアイトラッキングを使い、「目で狙い、目�
 防御ボタンを押している間、飛んでくる弾の周りに4つのマーカーが表示されます。すべてを視線で消すと、弾を弾き返せます。
 
 ### リザルト
-<img src="docs/images/result.jpg" alt="リザルト画面" width="600">
+<img src="docs/images/title.jpg" alt="リザルト画面" width="600">
 
 クリア時には、**視線の平均精度**と弾き返した弾の数を表示します。
 
