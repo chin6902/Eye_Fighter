@@ -2,7 +2,7 @@
 
 # 視線ファイター（Eye Fighter）
 
-<img src="docs/images/result.jpg" alt="視線ファイター タイトル画面" width="720">
+<img src="docs/images/demo.gif" alt="視線で属性を選び、線をなぞって攻撃するプレイ映像" width="720">
 
 **視線入力でQTEを行う3Dアクションゲーム**
 
